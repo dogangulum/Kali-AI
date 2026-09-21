@@ -1,0 +1,38 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "123456789012345",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "+905551234567",
+              "phone_number_id": "987654321098765"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "Ayşe Yılmaz"
+                },
+                "wa_id": "905327654321"
+              }
+            ],
+            "messages": [
+              {
+                "from": "905327654321",
+                "id": "wamid.HBgLMjA1NDU2Nzg2OTAxNTYwFQIAERgQ2MzM0Nzc1N0Q0QURFOTM2MkY1Qw==",
+                "timestamp": "1726912345",
+                "type": "text",
+                "text": {
+                  "body": "Merhaba, güzellik merkezinde randevu almak istiyorum. Bugün akşam uygun mu?"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

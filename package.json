@@ -1,0 +1,14 @@
+{
+  "name": "kali-ai",
+  "version": "1.0.0",
+  "description": "Kali Beauty AI Webhook Services",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test tests/**/*.test.cjs"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "keywords": ["webhook", "whatsapp", "instagram", "meta"],
+  "license": "MIT"
+}

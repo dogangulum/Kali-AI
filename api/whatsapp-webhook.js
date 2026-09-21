@@ -1,4 +1,9 @@
-﻿const crypto = require("crypto");
+// NOTE: This file is an old / unused draft webhook handler.
+// The active implementation has moved to:
+//   supabase/functions/whatsapp-webhook/index.ts
+// This file is kept only for reference and should not be used in production.
+
+const crypto = require("crypto");
 
 module.exports = async function handler(req, res) {
   const VERIFY_TOKEN = process.env.META_WHATSAPP_VERIFY_TOKEN;

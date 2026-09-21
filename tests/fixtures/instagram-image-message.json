@@ -1,0 +1,45 @@
+{
+  "object": "instagram",
+  "entry": [
+    {
+      "id": "instagram_business_account_123",
+      "time": 1726912700,
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "instagram",
+            "metadata": {
+              "thread_id": "thread_456",
+              "page_id": "page_789"
+            },
+            "messages": [
+              {
+                "id": "ig_msg_002",
+                "timestamp": "1726912700",
+                "sender": {
+                  "id": "user_abc_124"
+                },
+                "recipient": {
+                  "id": "page_789"
+                },
+                "message": {
+                  "mid": "m_002",
+                  "text": "Bu manicure örneğine benzer bir tasarım istiyorum."
+                },
+                "attachments": [
+                  {
+                    "type": "image",
+                    "payload": {
+                      "url": "https://example.com/media/instagram-reference-01.jpg"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

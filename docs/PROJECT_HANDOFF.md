@@ -52,7 +52,6 @@ Telegram daha sonra onay paneli olarak değerlendirilecek.
 - Modular provider integrations
 
 ## Araştırılmış ancak henüz kurulmuş sayılmayacak araçlar
-- Claude Code
 - Headroomlabs
 - Graphify
 - Task Observer
@@ -60,6 +59,8 @@ Telegram daha sonra onay paneli olarak değerlendirilecek.
 - Mempalace
 
 Bunlar ihtiyaç ve doğrulama sonrasında değerlendirilecek; mevcut entegrasyon olarak varsayılmayacak.
+
+Claude Code eklentisinin kurulum durumu aşağıdaki "Şu Anki Aşama" bölümünde ayrı belirtilmiştir.
 
 ## Kritik Gerçeklik Kontrolü
 Önceki planlama görüşmelerinde bazı entegrasyonların yapılmış olabileceğini ima eden ifadeler geçti.
@@ -71,18 +72,18 @@ VS Code proje klasörü oluşturuldu:
 D:\Kali Beauty\Kali-AI
 
 Claude Code eklentisi kurulmuş durumda.
-Repository'nin temel yapısı hazırlanıyor.
+Repository'nin temel dosya yapısı mevcut: webhook kaynakları, SQL migration dosyaları, ortam örneği, yerel Supabase yapılandırması, Deno/npm görevleri ve Node.js test dosyaları bulunuyor. Dosyaların varlığı canlı kurulumun veya testlerin başarıyla çalıştığının kanıtı değildir.
 Claude ücretli aboneliği/Claude Code kullanım yetkisi henüz doğrulanmış değildir.
 
 ## İlk Teknik Milestone
 Önce güvenli ve modüler bir temel oluştur:
-1. configuration schema
-2. environment template
-3. business profile abstraction
-4. provider interfaces
-5. DM conversation state model
-6. approval workflow model
-7. database schema taslağı
-8. tests
-9. README/setup
-10. ardından gerçek Meta/Supabase entegrasyonları
+1. [x] configuration schema taslağı (`business_config.config` JSONB alanı ve açıklamalı örnek; alan doğrulaması ve uygulama entegrasyonu tamamlanmış değil)
+2. [x] environment template
+3. [ ] business profile abstraction
+4. [ ] provider interfaces
+5. [ ] DM conversation state model
+6. [ ] approval workflow model
+7. [x] database schema taslağı
+8. [x] test dosyaları (çalıştırma başarısı ayrıca doğrulanmalı)
+9. [x] README/setup dosyaları (uçtan uca kurulum doğrulaması anlamına gelmez)
+10. [ ] ardından gerçek Meta/Supabase entegrasyonları

@@ -21,6 +21,10 @@ venv/
 .DS_Store
 Thumbs.db
 
+# Local AI tool state (machine-specific, not project source)
+.claude/
+.kilo/
+
 # Logs / temp
 *.log
 tmp/
@@ -33,3 +37,24 @@ temp/
 *.key
 
 .env.local
+
+# Additional common ignores
+coverage/
+.nyc_output/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+serverless/
+.build/
+.parcel-cache/
+.svelte-kit/
+.env.*.local
+.local.env
+.aws/
+.aws/credentials
+.vscode/*.code-workspace
+npm-debug.log*
+.pnpm-debug.log*
+supabase/.temp/

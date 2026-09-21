@@ -1,0 +1,32 @@
+# Local development only. This is a container namespace, not a hosted project ref.
+project_id = "kali-ai-local"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+# Local version; the hosted database version has not been checked.
+major_version = 17
+
+[db.seed]
+# No seed file is provided. Migrations remain in supabase/migrations/.
+enabled = false
+sql_paths = []
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+
+[edge_runtime]
+# Database-only setup; see README for standalone Deno webhook testing.
+enabled = false
+
+[analytics]
+enabled = false

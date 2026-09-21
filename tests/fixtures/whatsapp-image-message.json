@@ -1,0 +1,41 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "123456789012345",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "+905551234567",
+              "phone_number_id": "987654321098765"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "Merve K."
+                },
+                "wa_id": "905335556677"
+              }
+            ],
+            "messages": [
+              {
+                "from": "905335556677",
+                "id": "wamid.HBgLMjA1NDU2Nzg2OTAxNTYwFQIAERgQ5NTM4NDAxNDE0QzhDNDYwQzA=",
+                "timestamp": "1726912456",
+                "type": "image",
+                "image": {
+                  "mime_type": "image/jpeg",
+                  "sha256": "78e2b5a540b0e5d85a9b8c5d8e4a1f7d3d6700b6b9d8eb4d8e4f3f0896e2c10",
+                  "id": "490730782339823",
+                  "caption": "Bu görseli referans olarak kullanabilir miyim?"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
