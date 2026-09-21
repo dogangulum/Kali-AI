@@ -31,3 +31,5 @@ temp/
 *secret*
 *.pem
 *.key
+
+.env.local
