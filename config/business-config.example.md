@@ -93,7 +93,7 @@ Aşağıdaki `config` içindeki anahtarlar örnek bir düzen önerisidir. Mevcut
 
 İşletmenin bu bilgileri gireceği bir yönetim ekranı veya ayar kaydetme API'si henüz yoktur. Dosya, böyle bir girişte sağlanacak veriyi gösterir; mevcut uygulamada dosyayı düzenlemek davranışı değiştirmez.
 
-`supabase/functions/` altındaki WhatsApp ve Instagram webhook'ları doğrulama, imza kontrolü ve istek sınırlama yapar; kabul edilen JSON'u konsola yazar. İşletme eşleme, veritabanından ayar okuma veya bu tona göre AI yanıtı üretme henüz uygulanmamıştır. `api/whatsapp-webhook.js` eski, kullanılmayan taslak olarak işaretlidir.
+`supabase/functions/` altındaki WhatsApp ve Instagram webhook'ları GET doğrulama, POST HMAC-SHA256 imza kontrolü ve temel rate limiting yapar; gelen ve doğrulanmış inbound mesajları veritabanında (conversations/messages) kaydeder ve payload'ı loglar. İşletme eşleme, veritabanından ayar okuma veya bu tona göre tam otomatik AI yanıtı üretme, outbound mesaj gönderimi ve kapsamlı multi-tenant yönlendirme hâlâ kısmen eksiktir. `api/whatsapp-webhook.js` eski, kullanılmayan taslak olarak işaretlidir.
 
 Şemada RLS politikaları bulunması ve bu örnekte `business_id` gösterilmesi, tek başına işletmeler arası izolasyonun tamamlandığını göstermez. Bu dosya yetkilendirme veya webhook yönlendirme mekanizması tanımlamaz. Bu alanlardaki uygulama değişiklikleri proje yönlendirme kuralları kapsamında ayrıca ele alınmalıdır.
 

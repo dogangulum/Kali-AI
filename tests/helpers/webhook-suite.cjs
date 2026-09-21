@@ -35,10 +35,40 @@ const unusedSupabaseModule = {
   },
 };
 
-function loadHandler(channel, overrides = {}, supabaseModule = unusedSupabaseModule) {
+// Used whenever a test doesn't configure ANTHROPIC_API_KEY: reply generation
+// short-circuits before ever calling fetch, so this stub should never run.
+async function unusedFetch() {
+  throw new Error('fetch() should not be called without a mock fetchImpl configured');
+}
+
+// supabase/functions/_shared/reply-agent.ts is a real static ESM module
+// (`import { generateAndStoreReply } from "../_shared/reply-agent.ts"` in
+// each webhook's index.ts), same situation as the Supabase import above:
+// vm.runInNewContext runs a classic Script, not a Module, so a top-level
+// `import` would be a SyntaxError. Rather than add a module loader, we
+// inline the shared file's (type-stripped, export-stripped) source ahead of
+// the webhook's own source in the same script, then drop the import line --
+// the functions it defines are simply in scope by the time index.ts's own
+// code runs, same as a bundler would produce.
+const REPLY_AGENT_FILE = resolve(__dirname, '../../supabase/functions/_shared/reply-agent.ts');
+const REPLY_AGENT_IMPORT_RE = /import\s*\{\s*generateAndStoreReply\s*\}\s*from\s*['"]\.\.\/_shared\/reply-agent\.ts['"];?/;
+// Only `export function` / `export async function` survive stripTypeScriptTypes
+// (interfaces/type aliases are pure type syntax and are erased entirely) --
+// this strips just that leading `export ` so the declarations become plain
+// top-of-script functions instead of ESM exports.
+const EXPORT_RE = /^export\s+(?=(async\s+function|function)\b)/gm;
+
+function loadReplyAgentSource() {
+  const raw = readFileSync(REPLY_AGENT_FILE, 'utf8');
+  return stripTypeScriptTypes(raw).replace(EXPORT_RE, '');
+}
+
+function loadHandler(channel, overrides = {}, supabaseModule = unusedSupabaseModule, fetchImpl = unusedFetch) {
   const file = resolve(__dirname, '../../supabase/functions', `${channel}-webhook`, 'index.ts');
-  const code = stripTypeScriptTypes(readFileSync(file, 'utf8'))
-    .replace(SUPABASE_IMPORT_RE, 'const { createClient } = __supabaseModule;');
+  const code = loadReplyAgentSource() + '\n' +
+    stripTypeScriptTypes(readFileSync(file, 'utf8'))
+      .replace(SUPABASE_IMPORT_RE, 'const { createClient } = __supabaseModule;')
+      .replace(REPLY_AGENT_IMPORT_RE, '');
   const tokenKey = `META_${channel.toUpperCase()}_VERIFY_TOKEN`;
   const env = { [tokenKey]: TOKEN, META_APP_SECRET: SECRET, ...overrides };
   let handler;
@@ -55,6 +85,7 @@ function loadHandler(channel, overrides = {}, supabaseModule = unusedSupabaseMod
     Request, Response, URL, TextEncoder,
     crypto: webcrypto,
     Date: FakeDate,
+    fetch: fetchImpl,
     console: { log() {}, error: (...args) => errors.push(args) },
     __supabaseModule: supabaseModule,
   }, { filename: file, timeout: 1000 });
@@ -66,24 +97,98 @@ function loadHandler(channel, overrides = {}, supabaseModule = unusedSupabaseMod
   };
 }
 
-// A minimal in-memory stand-in for the Supabase JS client, covering exactly
-// the query shapes the webhooks issue: find-or-create on `conversations`
-// (select().eq().eq().eq().maybeSingle(), then insert().select().single())
-// and a plain insert() on `messages`. No network, no real Postgres.
-function createMockSupabase({ failSelect = false, failInsertConversation = false, failInsertMessage = false } = {}) {
+// Loads supabase/functions/_shared/reply-agent.ts in isolation (no Deno
+// scaffolding needed at all -- the module is deliberately Deno-free, see
+// its own header comment) for direct unit tests of routing/prompt-building
+// without going through a webhook payload.
+function loadReplyAgentModule() {
+  const code = `${loadReplyAgentSource()}\n;({ classifyComplexity, computeCostUsd, buildSystemPrompt, buildUserTurn, callAnthropicMessages, foldConversationSummary, generateAndStoreReply });`;
+  const errors = [];
+  const logs = [];
+  const module_ = runInNewContext(code, {
+    console: { log: (...args) => logs.push(args), error: (...args) => errors.push(args) },
+  }, { filename: REPLY_AGENT_FILE, timeout: 1000 });
+  return { ...module_, errors, logs };
+}
+
+// A representative (fake, not Kali-specific) business_config.config blob,
+// matching the shape documented in config/business-config.example.md, used
+// as createMockSupabase's default so reply-generation tests don't each have
+// to restate a full config just to exercise the happy path.
+const DEFAULT_BUSINESS_CONFIG = {
+  language: 'tr-TR',
+  currency: 'TRY',
+  services: [
+    {
+      id: 'test-hizmet',
+      name: 'Test Hizmeti',
+      description: 'Test amaçlı örnek hizmet.',
+      duration_minutes: 30,
+      price: { amount: 500, unit: 'session', tax_included: true },
+      active: true,
+    },
+  ],
+  working_hours: {
+    monday: [{ opens: '09:00', closes: '18:00' }],
+  },
+  conversation_style: {
+    tone: 'Sıcak ve profesyonel',
+    address_form: 'siz',
+    response_length: 'Kısa',
+    emoji_usage: 'Seyrek',
+    greeting: "Merhaba, Test İşletmesi'ne hoş geldiniz.",
+    guidelines: ['Yalnızca listelenen hizmetleri öner.'],
+  },
+};
+
+// A minimal in-memory stand-in for the Supabase JS client, covering the
+// query shapes the webhooks and the reply agent issue: find-or-create and
+// summary read/update on `conversations`, insert (with or without a
+// following select().single()) on `messages`, select on `business_config`,
+// and insert on `model_routing_log`. No network, no real Postgres.
+function createMockSupabase({
+  failSelect = false,
+  failInsertConversation = false,
+  failInsertMessage = false,
+  businessConfig = DEFAULT_BUSINESS_CONFIG,
+  failBusinessConfigSelect = false,
+  failInsertRoutingLog = false,
+  failConversationSummaryUpdate = false,
+} = {}) {
   const conversations = new Map();
+  const conversationRecords = new Map();
   const messages = [];
+  const modelRoutingLogs = [];
   let nextId = 1;
+  let nextMessageId = 1;
   const keyOf = (row) => `${row.business_id}|${row.platform}|${row.customer_identifier}`;
 
   const client = {
     from(table) {
       if (table === 'conversations') {
-        const builder = { filters: {}, insertRow: null };
+        const builder = { filters: {}, insertRow: null, updatePatch: null };
         builder.select = () => builder;
-        builder.eq = (column, value) => { builder.filters[column] = value; return builder; };
+        builder.eq = (column, value) => {
+          builder.filters[column] = value;
+          if (builder.updatePatch) {
+            // Terminal call for `.update(patch).eq(column, value)` -- the
+            // real supabase-js client resolves this directly as a promise,
+            // no further chaining needed.
+            return (async () => {
+              if (failConversationSummaryUpdate) return { error: new Error('mock: conversation update failed') };
+              const record = conversationRecords.get(value);
+              if (record) Object.assign(record, builder.updatePatch);
+              return { error: null };
+            })();
+          }
+          return builder;
+        };
         builder.maybeSingle = async () => {
           if (failSelect) return { data: null, error: new Error('mock: conversation select failed') };
+          if ('id' in builder.filters && Object.keys(builder.filters).length === 1) {
+            const record = conversationRecords.get(builder.filters.id);
+            return { data: record ? { summary: record.summary ?? null } : null, error: null };
+          }
           const key = `${builder.filters.business_id}|${builder.filters.platform}|${builder.filters.customer_identifier}`;
           const id = conversations.get(key);
           return { data: id ? { id } : null, error: null };
@@ -93,15 +198,45 @@ function createMockSupabase({ failSelect = false, failInsertConversation = false
           if (failInsertConversation) return { data: null, error: new Error('mock: conversation insert failed') };
           const id = `conv-${nextId++}`;
           conversations.set(keyOf(builder.insertRow), id);
+          conversationRecords.set(id, { id, ...builder.insertRow, summary: builder.insertRow.summary ?? null });
           return { data: { id }, error: null };
         };
+        builder.update = (patch) => { builder.updatePatch = patch; return builder; };
         return builder;
       }
       if (table === 'messages') {
+        const builder = {};
+        builder.insert = (row) => {
+          const result = failInsertMessage
+            ? { data: null, error: new Error('mock: message insert failed') }
+            : (() => {
+                const id = `msg-${nextMessageId++}`;
+                messages.push({ ...row, id });
+                return { data: { id }, error: null };
+              })();
+          return {
+            select: () => ({ single: async () => result }),
+            then: (resolve) => resolve({ error: result.error }),
+          };
+        };
+        return builder;
+      }
+      if (table === 'business_config') {
+        const builder = { filters: {} };
+        builder.select = () => builder;
+        builder.eq = (column, value) => { builder.filters[column] = value; return builder; };
+        builder.maybeSingle = async () => {
+          if (failBusinessConfigSelect) return { data: null, error: new Error('mock: business_config select failed') };
+          if (businessConfig === null) return { data: null, error: null };
+          return { data: { config: businessConfig }, error: null };
+        };
+        return builder;
+      }
+      if (table === 'model_routing_log') {
         return {
           insert: async (row) => {
-            if (failInsertMessage) return { error: new Error('mock: message insert failed') };
-            messages.push(row);
+            if (failInsertRoutingLog) return { error: new Error('mock: model_routing_log insert failed') };
+            modelRoutingLogs.push(row);
             return { error: null };
           },
         };
@@ -110,7 +245,7 @@ function createMockSupabase({ failSelect = false, failInsertConversation = false
     },
   };
 
-  return { module: { createClient: () => client }, conversations, messages };
+  return { module: { createClient: () => client }, conversations, conversationRecords, messages, modelRoutingLogs };
 }
 
 function getRequest({ token = TOKEN, mode = 'subscribe', challenge = '12345', ip = '192.0.2.1' } = {}) {
@@ -259,4 +394,12 @@ function registerWebhookTests(channel) {
   });
 }
 
-module.exports = { registerWebhookTests, loadHandler, postRequest, signature, createMockSupabase };
+module.exports = {
+  registerWebhookTests,
+  loadHandler,
+  postRequest,
+  signature,
+  createMockSupabase,
+  loadReplyAgentModule,
+  DEFAULT_BUSINESS_CONFIG,
+};

@@ -15,7 +15,7 @@ Proje başlangıç aşamasında; henüz uçtan uca çalışan bir AI asistanı v
 - Yerel Supabase yapılandırması ve hayali bir işletme için açıklamalı ayar örneği.
 - Proje hedefleri ve geliştirme kuralları.
 
-Webhook'lar kabul ettikleri veriyi konsola yazar ve yanıt döner; veritabanına kaydetmez, AI çağrısı yapmaz ve müşteriye mesaj göndermez. AI yanıtları, model seçimi, içerik üretimi, insan onay ekranı, reklam yönetimi, randevu iş akışı ve analitik henüz uygulanmış değildir. SQL tablolarının bulunması bu işlevlerin çalıştığı anlamına gelmez. Canlı servislerin veya Meta entegrasyonlarının durumu yalnızca bu dosyalardan doğrulanamaz.
+Webhook'lar GET doğrulaması, POST imza kontrolü ve rate limiting uyguladıktan sonra doğrulanmış inbound mesajları veritabanına (conversations, messages tabloları) kaydeder ve payload'ı loglar; AI çağrısı yapmaz ve müşteriye mesaj göndermez. AI yanıtları, model seçimi, içerik üretimi, insan onay ekranı, reklam yönetimi, randevu iş akışı ve analitik henüz uygulanmış değildir. SQL tablolarının bulunması bu işlevlerin tamamlandığını garanti etmez; bazı gelişmiş iş akışları hâlâ eksiktir. Canlı servislerin veya Meta entegrasyonlarının durumu yalnızca bu dosyalardan doğrulanamaz.
 
 ## Dosya yapısı
 
@@ -132,6 +132,14 @@ Beklenen sonuç: HTTP `401`. Başarılı POST için gönderilen gövdenin birebi
 
 ## Otomatik testler
 
+Yerel webhook başlatma, örnek mesaj gönderme ve sonuç kontrolünü tek komutta çalıştırmak için:
+
+```powershell
+npm run test:local
+```
+
+Node.js 22.13+, Deno 2 ve önbelleğe alınmış webhook bağımlılığı gerekir. Araç iki kanalı sırayla test eder, açtığı süreçleri kapatır ve `HEPSİ BAŞARILI` veya `ŞURADA SORUN VAR` özeti verir. Hazırlık, kullanım ve kapsam: [Birleşik yerel test](docs/LOCAL_TESTS.md).
+
 Node.js **22.13 veya üzeri** ve npm ile proje kökünden:
 
 ```powershell
@@ -202,3 +210,7 @@ Bu README güncellemesinde komutlar ve açıklamalar mevcut dosyalarla karşıla
 ## Lisans
 
 Projenin lisansı [MIT](LICENSE) olarak belirtilmiştir; `package.json` içindeki lisans alanı da MIT'dir.
+
+## Belgeler
+
+Daha fazla belge için [docs/README.md](docs/README.md) dosyasına bakın.

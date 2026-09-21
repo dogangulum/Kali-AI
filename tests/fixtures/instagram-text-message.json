@@ -4,31 +4,18 @@
     {
       "id": "instagram_business_account_123",
       "time": 1726912600,
-      "changes": [
+      "messaging": [
         {
-          "field": "messages",
-          "value": {
-            "messaging_product": "instagram",
-            "metadata": {
-              "thread_id": "thread_456",
-              "page_id": "page_789"
-            },
-            "messages": [
-              {
-                "id": "ig_msg_001",
-                "timestamp": "1726912600",
-                "sender": {
-                  "id": "user_abc_123"
-                },
-                "recipient": {
-                  "id": "page_789"
-                },
-                "message": {
-                  "mid": "m_001",
-                  "text": "Merhaba, fiyat listesi ve randevu saatleri için bilgi alabilir miyim?"
-                }
-              }
-            ]
+          "sender": {
+            "id": "user_abc_123"
+          },
+          "recipient": {
+            "id": "page_789"
+          },
+          "timestamp": 1726912600,
+          "message": {
+            "mid": "m_001",
+            "text": "Merhaba, fiyat listesi ve randevu saatleri için bilgi alabilir miyim?"
           }
         }
       ]

@@ -1,5 +1,7 @@
 # Webhook testleri
 
+Proje genelindeki AI, model yönlendirme, araçlar, SQL ve fixture kapsamı için [test kapsam raporuna](../docs/TEST_KAPSAM_RAPORU.md) bakın. Bu incelemede eklenen sınır/CLI/fixture testleri `npm test` ile çalışır. `KAPSAM-05/06` işaretli iki TODO, mevcut açıkları gerçekten çalıştırarak gösterir; başarılı sayılmaz. `KAPSAM-01/02/03/04` eşzamanlı kaynak/fixture düzeltmeleriyle kapanmış, ilgili testler normal regresyon testi olmuştur. TODO başarısızlıkları Node'un çıkış kodunu değiştirmediğinden özetteki TODO sayısını ayrıca kontrol edin.
+
 WhatsApp ve Instagram'ın `supabase/functions/` altındaki gerçek TypeScript dosyaları için ortak davranış testleri. Her senaryo yeni bir VM bağlamında çalışır; ortam değişkenleri, saat ve `Deno.serve` test karşılıklarıyla sağlanır. Handler doğrudan çağrılır; HTTP sunucusu açılmaz ve ağ isteği gönderilmez. `.env` dosyaları veya gerçek anahtarlar okunmaz. Uygulama dosyasının davranışı değiştirilmez; yalnızca gerçek `import` satırı, Node'un `vm` modülünde script olarak çalıştırılabilmesi için test yüklemesi sırasında sahte bir modül referansıyla değiştirilir (bkz. aşağıdaki not).
 
 ## Kapsam
@@ -22,7 +24,21 @@ Node.js **22.13 veya üzeri** gerekir (`node:module.stripTypeScriptTypes` API'si
 node --test tests/whatsapp-webhook.test.cjs tests/instagram-webhook.test.cjs
 ```
 
-`package.json` aynı testler için `npm test` kısayolunu tanımlar. `deno task test` ayrı bir Deno görevidir; mevcut Node.js testlerinin çalıştırma komutu değildir.
+`package.json` içindeki `npm test`, webhook testleriyle birlikte yerel araç testlerini de çalıştırır. `deno task test` ayrı bir Deno görevidir; mevcut Node.js testlerinin çalıştırma komutu değildir.
+
+## Kontrol araçlarının testleri
+
+`check-env.test.cjs`, eksik ortam dosyalarını ve değişken adlarını, başarılı sonucu, yorum/boş satır ayrıştırmasını ve boş değerlerin mevcut davranışta yalnızca ad kontrolünden geçtiğini denetler.
+
+`check-webhooks.test.cjs`, eksik URL/token ayarlarını, iki kanalın dört GET kontrolünü, yanlış challenge yanıtını, hatalı kabul yanıtlarını, HTTP/bağlantı hatalarını, dosyadaki ayarların önceliğini ve günlük seçeneklerini denetler. Hata mesajları, çıkış kodları ve sonuç özetleri doğrulanır.
+
+Bu iki test dosyası gerçek araç kaynaklarını VM içinde çalıştırır. `helpers/run-check-script.cjs`, dosya sistemi, süreç çıkışı ve HTTP isteklerini sahte karşılıklarla sağlar; gerçek `.env.local` okunmaz, günlük dosyası yazılmaz ve ağ bağlantısı kurulmaz. Üretim/webhook kodu değiştirilmez.
+
+Yalnızca bu testleri çalıştırmak için:
+
+```powershell
+node --test tests/check-env.test.cjs tests/check-webhooks.test.cjs
+```
 
 Node sürümüne bağlı olarak TypeScript dönüştürme API'si deneysel özellik uyarısı verebilir.
 

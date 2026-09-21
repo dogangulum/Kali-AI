@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { generateAndStoreReply } from "../_shared/reply-agent.ts";
 
 const VERIFY_TOKEN = Deno.env.get("META_INSTAGRAM_VERIFY_TOKEN");
 const APP_SECRET = Deno.env.get("META_APP_SECRET");
@@ -11,6 +12,14 @@ const APP_SECRET = Deno.env.get("META_APP_SECRET");
 // ..._seed_kali_business.sql) creates the row idempotently; a human reads
 // its generated id once and sets it as KALI_BUSINESS_ID.
 const BUSINESS_ID = Deno.env.get("KALI_BUSINESS_ID");
+
+// Anthropic API key used to draft (never send) AI replies to inbound
+// messages -- see supabase/functions/_shared/reply-agent.ts. Not set in any
+// committed environment; a human sets it as a Supabase Edge Function secret.
+// Its absence is handled the same way as the BUSINESS_ID guard below: log
+// and skip reply generation, inbound persistence and the webhook response
+// are unaffected.
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected automatically into
 // every Supabase Edge Function; no secret needs to be set for these two.
@@ -116,12 +125,19 @@ async function findOrCreateConversation(platform: string, customerIdentifier: st
   return created.id;
 }
 
-async function persistInboundMessages(payload: unknown): Promise<void> {
+interface InsertedInboundMessage {
+  conversationId: string;
+  messageId: string;
+  content: string;
+}
+
+async function persistInboundMessages(payload: unknown): Promise<InsertedInboundMessage[]> {
   if (!supabase || !BUSINESS_ID) {
     console.error("instagram-webhook: SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY/KALI_BUSINESS_ID not configured, skipping persistence");
-    return;
+    return [];
   }
 
+  const inserted: InsertedInboundMessage[] = [];
   const conversationIdByCustomer = new Map<string, string>();
   for (const { customerIdentifier, content } of extractInstagramMessages(payload)) {
     let conversationId = conversationIdByCustomer.get(customerIdentifier);
@@ -130,14 +146,20 @@ async function persistInboundMessages(payload: unknown): Promise<void> {
       conversationIdByCustomer.set(customerIdentifier, conversationId);
     }
 
-    const { error } = await supabase.from("messages").insert({
-      business_id: BUSINESS_ID,
-      conversation_id: conversationId,
-      direction: "inbound",
-      content,
-    });
+    const { data, error } = await supabase
+      .from("messages")
+      .insert({
+        business_id: BUSINESS_ID,
+        conversation_id: conversationId,
+        direction: "inbound",
+        content,
+      })
+      .select("id")
+      .single();
     if (error) throw error;
+    inserted.push({ conversationId, messageId: data.id, content });
   }
+  return inserted;
 }
 
 Deno.serve(async (req: Request) => {
@@ -175,8 +197,9 @@ Deno.serve(async (req: Request) => {
       return new Response("Bad Request", { status: 400 });
     }
 
+    let insertedInboundMessages: InsertedInboundMessage[] = [];
     try {
-      await persistInboundMessages(payload);
+      insertedInboundMessages = await persistInboundMessages(payload);
     } catch (error) {
       // Meta retries webhook deliveries with backoff over an extended window
       // (documented as repeated attempts across multiple days) whenever it
@@ -186,6 +209,30 @@ Deno.serve(async (req: Request) => {
       // We log and still acknowledge with 200; a failed write is chased down
       // via function logs, not by relying on Meta's retry behavior.
       console.error("instagram-webhook: failed to persist inbound message", error);
+    }
+
+    // Draft (never send) an AI reply for each inbound message that was
+    // successfully persisted above. Same retry-avoidance reasoning as the
+    // persistence step: a failure here must never change the 2xx response
+    // Meta sees, so each message's reply generation is its own try/catch and
+    // a failure just gets logged. This only stores a draft `messages` row
+    // (direction: 'outbound') -- no Meta/Instagram send API is called here.
+    if (supabase && BUSINESS_ID) {
+      for (const inbound of insertedInboundMessages) {
+        try {
+          await generateAndStoreReply({
+            supabase,
+            businessId: BUSINESS_ID,
+            conversationId: inbound.conversationId,
+            inboundMessageId: inbound.messageId,
+            inboundContent: inbound.content,
+            anthropicApiKey: ANTHROPIC_API_KEY,
+            fetchImpl: fetch,
+          });
+        } catch (error) {
+          console.error("instagram-webhook: failed to generate reply", error);
+        }
+      }
     }
 
     console.log("Instagram webhook:", JSON.stringify(payload));

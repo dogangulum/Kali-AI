@@ -10,6 +10,21 @@ const DB_ENV = {
   KALI_BUSINESS_ID: 'business-1',
 };
 
+const DB_ENV_WITH_ANTHROPIC = { ...DB_ENV, ANTHROPIC_API_KEY: 'test-only-anthropic-key' };
+
+function anthropicFetch(text = 'Merhaba! Size nasıl yardımcı olabilirim?') {
+  return async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ content: [{ type: 'text', text }], usage: { input_tokens: 100, output_tokens: 30 } }),
+    text: async () => '',
+  });
+}
+
+function failingAnthropicFetch() {
+  return async () => ({ ok: false, status: 500, json: async () => ({}), text: async () => 'server error' });
+}
+
 function igTextPayload(senderId, text, mid = 'mid.TEST') {
   return {
     object: 'instagram',
@@ -149,4 +164,46 @@ test('instagram: a conversation insert failure still returns 200 and logs the er
   assert.deepEqual(await response.json(), { received: true });
   assert.equal(mock.messages.length, 0);
   assert.equal(errors.length, 1);
+});
+
+test('instagram: an inbound message gets a stored draft reply and a model_routing_log row', async () => {
+  const mock = createMockSupabase();
+  const { handler } = loadHandler('instagram', DB_ENV_WITH_ANTHROPIC, mock.module, anthropicFetch());
+  const response = await postJson(handler, igTextPayload('1234567890', 'Fiyatlarınız nedir?'));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { received: true });
+  assert.equal(mock.messages.length, 2);
+  assert.equal(mock.messages[0].direction, 'inbound');
+  assert.equal(mock.messages[1].direction, 'outbound');
+  assert.equal(mock.messages[1].content, 'Merhaba! Size nasıl yardımcı olabilirim?');
+  assert.equal(mock.messages[1].conversation_id, mock.messages[0].conversation_id);
+  assert.equal(mock.modelRoutingLogs.length, 1);
+  assert.equal(mock.modelRoutingLogs[0].provider, 'anthropic');
+  assert.equal(mock.modelRoutingLogs[0].message_id, mock.messages[0].id);
+});
+
+test('instagram: a reply-generation failure still returns 200, is logged, and no draft is stored', async () => {
+  const mock = createMockSupabase();
+  const { handler, errors } = loadHandler('instagram', DB_ENV_WITH_ANTHROPIC, mock.module, failingAnthropicFetch());
+  const response = await postJson(handler, igTextPayload('1234567890', 'Fiyatlarınız nedir?'));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { received: true });
+  assert.equal(mock.messages.length, 1);
+  assert.equal(mock.messages[0].direction, 'inbound');
+  assert.equal(mock.modelRoutingLogs.length, 0);
+  assert.equal(errors.length, 1);
+});
+
+test('instagram: without ANTHROPIC_API_KEY configured, the inbound message still persists and no draft is generated', async () => {
+  const mock = createMockSupabase();
+  const { handler } = loadHandler('instagram', DB_ENV, mock.module);
+  const response = await postJson(handler, igTextPayload('1234567890', 'Fiyatlarınız nedir?'));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { received: true });
+  assert.equal(mock.messages.length, 1);
+  assert.equal(mock.messages[0].direction, 'inbound');
+  assert.equal(mock.modelRoutingLogs.length, 0);
 });
