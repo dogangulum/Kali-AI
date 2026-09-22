@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { generateAndStoreReply } from "../_shared/reply-agent.ts";
+import { processLeadAndBooking } from "../_shared/lead-agent.ts";
 
 const VERIFY_TOKEN = Deno.env.get("META_INSTAGRAM_VERIFY_TOKEN");
 const APP_SECRET = Deno.env.get("META_APP_SECRET");
@@ -231,6 +232,27 @@ Deno.serve(async (req: Request) => {
           });
         } catch (error) {
           console.error("instagram-webhook: failed to generate reply", error);
+        }
+      }
+    }
+
+    // Core lead qualification + basic appointment booking (see
+    // supabase/functions/_shared/lead-agent.ts). Same retry-avoidance
+    // reasoning and per-message try/catch as the reply-generation loop
+    // above: a failure here must never change the 2xx response Meta sees.
+    // Runs after reply generation, independently of whether it succeeded.
+    if (supabase && BUSINESS_ID) {
+      for (const inbound of insertedInboundMessages) {
+        try {
+          await processLeadAndBooking({
+            supabase,
+            businessId: BUSINESS_ID,
+            conversationId: inbound.conversationId,
+            content: inbound.content,
+            nowMs: Date.now(),
+          });
+        } catch (error) {
+          console.error("instagram-webhook: failed to process lead/booking", error);
         }
       }
     }

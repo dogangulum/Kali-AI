@@ -52,23 +52,40 @@ async function unusedFetch() {
 // code runs, same as a bundler would produce.
 const REPLY_AGENT_FILE = resolve(__dirname, '../../supabase/functions/_shared/reply-agent.ts');
 const REPLY_AGENT_IMPORT_RE = /import\s*\{\s*generateAndStoreReply\s*\}\s*from\s*['"]\.\.\/_shared\/reply-agent\.ts['"];?/;
-// Only `export function` / `export async function` survive stripTypeScriptTypes
-// (interfaces/type aliases are pure type syntax and are erased entirely) --
-// this strips just that leading `export ` so the declarations become plain
-// top-of-script functions instead of ESM exports.
-const EXPORT_RE = /^export\s+(?=(async\s+function|function)\b)/gm;
+// Only `export function` / `export async function` / `export const` survive
+// stripTypeScriptTypes (interfaces/type aliases and type-only imports are
+// pure type syntax and are erased entirely) -- this strips just that
+// leading `export ` so the declarations become plain top-of-script
+// bindings instead of ESM exports.
+const EXPORT_RE = /^export\s+(?=(async\s+function|function|const)\b)/gm;
 
 function loadReplyAgentSource() {
   const raw = readFileSync(REPLY_AGENT_FILE, 'utf8');
   return stripTypeScriptTypes(raw).replace(EXPORT_RE, '');
 }
 
+// supabase/functions/_shared/lead-agent.ts is a second real static ESM
+// module (`import { processLeadAndBooking } from "../_shared/lead-agent.ts"`
+// in each webhook's index.ts, and itself
+// `import type { BusinessConfig } from "./reply-agent.ts"` -- a type-only
+// import, fully erased by stripTypeScriptTypes, so it needs no separate
+// strip regex). Same inlining technique as reply-agent.ts: read, strip
+// types, strip `export `, and prepend ahead of the webhook's own source.
+const LEAD_AGENT_FILE = resolve(__dirname, '../../supabase/functions/_shared/lead-agent.ts');
+const LEAD_AGENT_IMPORT_RE = /import\s*\{\s*processLeadAndBooking\s*\}\s*from\s*['"]\.\.\/_shared\/lead-agent\.ts['"];?/;
+
+function loadLeadAgentSource() {
+  const raw = readFileSync(LEAD_AGENT_FILE, 'utf8');
+  return stripTypeScriptTypes(raw).replace(EXPORT_RE, '');
+}
+
 function loadHandler(channel, overrides = {}, supabaseModule = unusedSupabaseModule, fetchImpl = unusedFetch) {
   const file = resolve(__dirname, '../../supabase/functions', `${channel}-webhook`, 'index.ts');
-  const code = loadReplyAgentSource() + '\n' +
+  const code = loadReplyAgentSource() + '\n' + loadLeadAgentSource() + '\n' +
     stripTypeScriptTypes(readFileSync(file, 'utf8'))
       .replace(SUPABASE_IMPORT_RE, 'const { createClient } = __supabaseModule;')
-      .replace(REPLY_AGENT_IMPORT_RE, '');
+      .replace(REPLY_AGENT_IMPORT_RE, '')
+      .replace(LEAD_AGENT_IMPORT_RE, '');
   const tokenKey = `META_${channel.toUpperCase()}_VERIFY_TOKEN`;
   const env = { [tokenKey]: TOKEN, META_APP_SECRET: SECRET, ...overrides };
   let handler;
@@ -111,6 +128,20 @@ function loadReplyAgentModule() {
   return { ...module_, errors, logs };
 }
 
+// Loads supabase/functions/_shared/lead-agent.ts in isolation, same
+// reasoning as loadReplyAgentModule above -- the module is deliberately
+// Deno-free (see its own header comment), so no Deno/webhook scaffolding is
+// needed at all for direct unit tests of scoring/date-parsing.
+function loadLeadAgentModule() {
+  const code = `${loadLeadAgentSource()}\n;({ scoreLead, classifyLead, matchServiceName, isHumanHandoffRequest, parseRequestedDateTime, processLeadAndBooking, QUALIFIED_SCORE_THRESHOLD });`;
+  const errors = [];
+  const logs = [];
+  const module_ = runInNewContext(code, {
+    console: { log: (...args) => logs.push(args), error: (...args) => errors.push(args) },
+  }, { filename: LEAD_AGENT_FILE, timeout: 1000 });
+  return { ...module_, errors, logs };
+}
+
 // A representative (fake, not Kali-specific) business_config.config blob,
 // matching the shape documented in config/business-config.example.md, used
 // as createMockSupabase's default so reply-generation tests don't each have
@@ -145,7 +176,9 @@ const DEFAULT_BUSINESS_CONFIG = {
 // query shapes the webhooks and the reply agent issue: find-or-create and
 // summary read/update on `conversations`, insert (with or without a
 // following select().single()) on `messages`, select on `business_config`,
-// and insert on `model_routing_log`. No network, no real Postgres.
+// insert on `model_routing_log`, select on `businesses` (timezone), and
+// find-or-update on `leads` plus insert (with dedupe select) on
+// `appointments` for the lead/booking agent. No network, no real Postgres.
 function createMockSupabase({
   failSelect = false,
   failInsertConversation = false,
@@ -154,13 +187,24 @@ function createMockSupabase({
   failBusinessConfigSelect = false,
   failInsertRoutingLog = false,
   failConversationSummaryUpdate = false,
+  businessTimezone = 'Europe/Istanbul',
+  failBusinessSelect = false,
+  failLeadSelect = false,
+  failLeadInsert = false,
+  failLeadUpdate = false,
+  failAppointmentSelect = false,
+  failAppointmentInsert = false,
 } = {}) {
   const conversations = new Map();
   const conversationRecords = new Map();
   const messages = [];
   const modelRoutingLogs = [];
+  const leads = [];
+  const appointments = [];
   let nextId = 1;
   let nextMessageId = 1;
+  let nextLeadId = 1;
+  let nextAppointmentId = 1;
   const keyOf = (row) => `${row.business_id}|${row.platform}|${row.customer_identifier}`;
 
   const client = {
@@ -241,11 +285,80 @@ function createMockSupabase({
           },
         };
       }
+      if (table === 'businesses') {
+        const builder = { filters: {} };
+        builder.select = () => builder;
+        builder.eq = (column, value) => { builder.filters[column] = value; return builder; };
+        builder.maybeSingle = async () => {
+          if (failBusinessSelect) return { data: null, error: new Error('mock: businesses select failed') };
+          return { data: { timezone: businessTimezone }, error: null };
+        };
+        return builder;
+      }
+      if (table === 'leads') {
+        const builder = { filters: {}, insertRow: null, updatePatch: null };
+        builder.select = () => builder;
+        builder.eq = (column, value) => {
+          builder.filters[column] = value;
+          if (builder.updatePatch) {
+            // Terminal call for `.update(patch).eq('id', id)`, same shape as
+            // the existing `conversations` summary-update path above.
+            return (async () => {
+              if (failLeadUpdate) return { error: new Error('mock: leads update failed') };
+              const record = leads.find((lead) => lead.id === value);
+              if (record) Object.assign(record, builder.updatePatch);
+              return { error: null };
+            })();
+          }
+          return builder;
+        };
+        builder.maybeSingle = async () => {
+          if (failLeadSelect) return { data: null, error: new Error('mock: leads select failed') };
+          const record = leads.find((lead) => lead.conversation_id === builder.filters.conversation_id);
+          return { data: record ? { id: record.id, status: record.status } : null, error: null };
+        };
+        builder.insert = (row) => { builder.insertRow = row; return builder; };
+        builder.single = async () => {
+          if (failLeadInsert) return { data: null, error: new Error('mock: leads insert failed') };
+          const id = `lead-${nextLeadId++}`;
+          leads.push({ id, ...builder.insertRow });
+          return { data: { id }, error: null };
+        };
+        builder.update = (patch) => { builder.updatePatch = patch; return builder; };
+        return builder;
+      }
+      if (table === 'appointments') {
+        const builder = { filters: {} };
+        builder.select = () => builder;
+        builder.eq = (column, value) => { builder.filters[column] = value; return builder; };
+        builder.maybeSingle = async () => {
+          if (failAppointmentSelect) return { data: null, error: new Error('mock: appointments select failed') };
+          const record = appointments.find(
+            (appt) => appt.lead_id === builder.filters.lead_id && appt.scheduled_at === builder.filters.scheduled_at,
+          );
+          return { data: record ? { id: record.id } : null, error: null };
+        };
+        builder.insert = async (row) => {
+          if (failAppointmentInsert) return { error: new Error('mock: appointments insert failed') };
+          const id = `appt-${nextAppointmentId++}`;
+          appointments.push({ id, ...row });
+          return { error: null };
+        };
+        return builder;
+      }
       throw new Error(`mock supabase: unexpected table "${table}"`);
     },
   };
 
-  return { module: { createClient: () => client }, conversations, conversationRecords, messages, modelRoutingLogs };
+  return {
+    module: { createClient: () => client },
+    conversations,
+    conversationRecords,
+    messages,
+    modelRoutingLogs,
+    leads,
+    appointments,
+  };
 }
 
 function getRequest({ token = TOKEN, mode = 'subscribe', challenge = '12345', ip = '192.0.2.1' } = {}) {
@@ -401,5 +514,6 @@ module.exports = {
   signature,
   createMockSupabase,
   loadReplyAgentModule,
+  loadLeadAgentModule,
   DEFAULT_BUSINESS_CONFIG,
 };

@@ -170,11 +170,11 @@ Yani taşıma sırasında da bu kurallar geçerli kalır. Özellikle:
 ## 5) Doğrulama öncesi kontrol listesi
 
 Taşımadan önce aşağılardan her biri kontrol edilmelidir:
-- [ ] Oracle Cloud VPS kurulumu yapılmış
-- [ ] Deno çalışıyor
-- [ ] Node.js çalışıyor
-- [ ] HTTPS erişimi hazır
-- [ ] webhook public URL doğru şekilde atanmış
+- [x] Oracle Cloud VPS kurulumu yapılmış (bkz. bölüm 9)
+- [x] Deno çalışıyor
+- [x] Node.js çalışıyor
+- [ ] HTTPS erişimi hazır (şu an sadece HTTP; TLS sertifikası henüz kurulmadı)
+- [ ] webhook public URL doğru şekilde atanmış (domain henüz yok, IP üzerinden erişim test ediliyor)
 - [ ] secret'lar güvenli saklama alanına yerleştirilmiş
 - [ ] `META_*` ve `KALI_BUSINESS_ID` set edilmiş
 - [ ] Supabase bağlantısı doğrulanmış
@@ -212,3 +212,23 @@ Oracle Cloud taşıma hazırlığı, mevcut repo içindeki çalışma mantığı
 8. production canlı sistemlere dokunmadan canlı/üretim benzeri kontrol
 
 Bu, proje kurallarına göre en güvenli ve gerçekçi geçiş planıdır.
+
+## 9) Gerçekleşen İlerleme (Canlı Kayıt)
+
+Bu bölüm, yukarıdaki planın hangi adımlarının fiilen tamamlandığını tarih sırasıyla kaydeder. Yeni bir karar eklemez, sadece yapılanı not eder.
+
+### 2026-09-22 — Sunucu oluşturuldu ve temel kurulum tamamlandı
+
+- **Instance adı:** `kali-ai-server`
+- **Makine tipi:** `VM.Standard.E2.1.Micro` (Always Free, x86) — ilk denenen ARM tipi (`VM.Standard.A1.Flex`, 4 OCPU/24GB) o an bölgede kapasite yetersizliği yüzünden alınamadı, küçük x86 tipiyle devam edildi. İleride ihtiyaç olursa ayrı bir ikinci sunucu olarak ARM tipi ek olarak açılabilir (ücretsiz kotada ikisi birlikte kullanılabiliyor).
+- **İşletim sistemi:** Ubuntu 22.04.5 LTS
+- **Public IPv4:** `130.210.25.28` (ephemeral — sunucu yeniden başlatılırsa/durup kalkarsa değişebilir, sabitlenmesi gerekiyorsa ileride "reserved public IP"ye çevrilmeli)
+- **Giriş anahtarı:** yerelde `Oracle Key/ssh-key-2026-09-22.key` altında tutuluyor, repoya girmiyor (`.gitignore`'da `*.key` deseni zaten kapsıyor)
+- **Kurulan yazılımlar:**
+  - Node.js 20 (NodeSource) — `node -v` → v20.20.2
+  - Deno 2.9.7 (resmi kurulum betiği ile, `~/.deno/bin`)
+  - nginx (apt) — çalışıyor, `systemctl status nginx` aktif
+  - `ufw` ile temel güvenlik duvarı: 22/80/443 açık
+  - Oracle'ın Ubuntu imajında hazır gelen ek iptables kuralı (80/443'ü ufw'den önce reddeden bir satır) tespit edilip düzeltildi, `netfilter-persistent` ile kalıcı hale getirildi
+- **Ağ erişimi doğrulandı:** Security List'e 80/443 ingress kuralları eklendi; `http://130.210.25.28/` dışarıdan test edildi, nginx varsayılan sayfası `200` dönüyor. Sunucu artık genel internetten erişilebilir durumda.
+- **Henüz yapılmadı:** HTTPS/TLS sertifikası, webhook kodunun sunucuya aktarılması, ortam değişkenlerinin (`META_*`, `SUPABASE_*`, `KALI_BUSINESS_ID`) tanımlanması, systemd servis dosyası.

@@ -182,3 +182,43 @@ Bu sıralama, önce bağlam ve gerçek durum, sonra veri modeli ve işleyiş, ar
 ## Not
 
 Bu belgeler, mevcut repo içindeki gerçek dosyalara dayanır. Yeni bir mimari tasarım eklenmez; mevcut durum ve proje kuralları düzenli şekilde özetlenir.
+
+## Tam liste ve belgelerin durumu
+Aşağıda docs/ klasöründeki tüm belgeler ve önerilen durum etiketleri listelenmiştir. "Stable" üretim/eğitim amaçlı referans olarak kullanılabilir; "Draft / WIP" geliştirme aşamasında veya UI taslakları; "Review / Possibly obsolete" bir gözden geçirme ve arşivleme kararı gerektirir.
+
+- ACILIS_HAZIRLIK.md — Stable
+- ALL_SCENARIOS.md — Review / Possibly obsolete (içerikte "taslak" / "eski" ibareleri bulundu; güncel senaryolarla eşleştiğinden emin olun)
+- BUSINESS_INFO_ACCEPTANCE_TESTS.md — Review / Possibly obsolete (içerikte "eski" ibareleri bulundu; fixture uyumu kontrolü önerilir)
+- CONTENT_AD_PREP.md — Draft / WIP
+- CONTENT_AD_PREP_EDGE_CASES.md — Draft / WIP
+- CONTENT_AD_UI_DRAFT.md — Draft / UI (taslak)
+- DEVELOPMENT_START_GUIDE.md — Draft / WIP
+- HUMAN_APPROVAL_ESCALATION_EDGE_CASES.md — Review / Possibly obsolete
+- HUMAN_APPROVAL_ESCALATION_UI_DRAFT.md — Draft / UI
+- HUMAN_APPROVAL_REQUIREMENTS.md — Draft / WIP
+- HUMAN_ESCALATION_ANALYTICS_COST_CONTROL_REQUIREMENTS.md — Review / Possibly obsolete
+- IMPLEMENTATION_PRIORITY_PLAN.md — Stable
+- KALI_BUSINESS_INFO_TEMPLATE.md — Review / Possibly obsolete
+- LEAD_QUALIFICATION_AND_BOOKING_REQUIREMENTS.md — Review / Possibly obsolete
+- LIVE_MESSAGE_MONITOR_HANDOFF.md — Draft / WIP (yeni uygulandı; içerikte hala "taslak/eski" ifadeleri olabilir)
+- LIVE_MESSAGE_TEST_CHECKLIST.md — Draft / WIP
+- LIVE_MONITOR_TESTS.md — Draft / WIP
+- LOCAL_TESTS.md — Stable
+- LOG_REPORT.md — Stable
+- ORACLE_CLOUD_DEPLOYMENT_PREP.md — Draft / Needs review (taşıma adımları güncellenmeli)
+- PROJECT_HANDOFF.md — Stable
+- SCRIPTS.md — Stable
+- SHARE_CHECKLIST.md — Stable
+- SOZLUK.md — Stable
+- START_HERE.md — Draft / WIP (içerikte "henüz uygulanmadı" notu var; güncelleme önerilir)
+- SYSTEM_FLOW.md — Review / Possibly obsolete
+- TEST_KAPSAM_RAPORU.md — Review / Possibly obsolete
+- TEST_SENARYOLARI.md — Stable
+- TROUBLESHOOTING_GUIDE.md — Draft / WIP
+
+Öneriler:
+- Draft / WIP etiketli dosyalar: öncelikli olarak okunup eksik bilgiler tamamlanmalı; özellikle DEVELOPMENT_START_GUIDE.md, START_HERE.md, LIVE_MESSAGE_MONITOR_HANDOFF.md gibi rehber belgeler güncel durumla eşleştirilmeli.
+- Review / Possibly obsolete etiketli dosyalar: içeriklerin güncellik kontrolü yapılsın; eğer yeni belgeler (örn. LEAD_QUALIFICATION_... veya HUMAN_ESCALATION_... güncellenmiş sürümleri) varsa eski sürümler arşivlenip README'de referans bırakılmalı.
+- Stable etiketli dosyalar: referans olarak kullanılabilir; yine düzenli aralıklarla (ör. sprint bazlı) gözden geçirilmesi önerilir.
+
+Bu liste, içerik içinde bulunan anahtar kelimelere göre ("taslak", "eski", "draft", "henüz uygulanmadı", vb.) otomatik tespit ile oluşturulmuştur. Belirtilen durumlardan farklı düşündüğünüz maddeler varsa söyleyin, README.md'de son halini sizin onayınıza göre netleştiririm.
