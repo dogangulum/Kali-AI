@@ -61,9 +61,7 @@ test('dev-tools: child failure is displayed instead of a completion message', as
   assert.doesNotMatch(result.stdout, /✓ Tamamlandı/);
 });
 
-test('dev-tools: quoted log path remains a single argument', {
-  todo: 'KAPSAM-06: whitespace splitting breaks quoted paths in getWebhookArgs.',
-}, async () => {
+test('dev-tools: quoted log path remains a single argument', async () => {
   const result = await run(['2', '--log-file "logs/my file.log"', '', 'q']);
   assert.equal(result.calls[0].args[2], 'logs/my file.log');
 });

@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { generateAndStoreReply } from "../_shared/reply-agent.ts";
+import { generateReplyDraft } from "../_shared/reply-agent.ts";
+import { planInboundReply, applyHumanMessage, type ConversationHandoffState } from "../_shared/handoff-agent.ts";
 import { processLeadAndBooking } from "../_shared/lead-agent.ts";
 
 const VERIFY_TOKEN = Deno.env.get("META_INSTAGRAM_VERIFY_TOKEN");
@@ -14,7 +15,7 @@ const APP_SECRET = Deno.env.get("META_APP_SECRET");
 // its generated id once and sets it as KALI_BUSINESS_ID.
 const BUSINESS_ID = Deno.env.get("KALI_BUSINESS_ID");
 
-// Anthropic API key used to draft (never send) AI replies to inbound
+// Anthropic API key used to draft delayed AI replies to inbound
 // messages -- see supabase/functions/_shared/reply-agent.ts. Not set in any
 // committed environment; a human sets it as a Supabase Edge Function secret.
 // Its absence is handled the same way as the BUSINESS_ID guard below: log
@@ -83,8 +84,15 @@ async function verifySignature(rawBody: string, signatureHeader: string | null):
 // message types (attachments, etc.) don't have a text body, so we fall back
 // to the raw message JSON. Non-message events (e.g. a "seen"/read receipt)
 // have no "message" field and yield nothing here.
-function extractInstagramMessages(payload: unknown): Array<{ customerIdentifier: string; content: string }> {
-  const results: Array<{ customerIdentifier: string; content: string }> = [];
+interface InstagramMessage {
+  customerIdentifier: string;
+  content: string;
+  platformMessageId: string | null;
+  isEcho: boolean;
+}
+
+function extractInstagramMessages(payload: unknown): InstagramMessage[] {
+  const results: InstagramMessage[] = [];
   const entries = (payload as { entry?: unknown })?.entry;
   if (!Array.isArray(entries)) return results;
 
@@ -97,9 +105,16 @@ function extractInstagramMessages(payload: unknown): Array<{ customerIdentifier:
       if (typeof senderId !== "string" || senderId.length === 0) continue;
       const message = (event as { message?: unknown })?.message;
       if (!message) continue;
+      const isEcho = (message as { is_echo?: unknown }).is_echo === true ||
+        senderId === (entry as { id?: unknown }).id;
+      const customerIdentifier = isEcho
+        ? (event as { recipient?: { id?: unknown } }).recipient?.id : senderId;
+      if (typeof customerIdentifier !== "string" || !customerIdentifier) continue;
+      const mid = (message as { mid?: unknown }).mid;
       const text = (message as { text?: unknown })?.text;
       const content = typeof text === "string" ? text : JSON.stringify(message);
-      results.push({ customerIdentifier: senderId, content });
+      results.push({ customerIdentifier, content, isEcho,
+        platformMessageId: typeof mid === "string" && mid ? mid : null });
     }
   }
 
@@ -130,6 +145,73 @@ interface InsertedInboundMessage {
   conversationId: string;
   messageId: string;
   content: string;
+  receivedAtMs: number;
+  sendAfter: string;
+}
+
+async function readHandoff(conversationId: string): Promise<ConversationHandoffState> {
+  const { data, error } = await supabase!.from("conversations")
+    .select("control_mode, next_wait_seconds, last_customer_message_at, last_human_message_at")
+    .eq("id", conversationId).eq("business_id", BUSINESS_ID).maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("instagram-webhook: conversation missing");
+  return {
+    controlMode: data.control_mode === "human" ? "human" : "bot",
+    nextWaitSeconds: data.next_wait_seconds,
+    lastCustomerMessageAtMs: data.last_customer_message_at ? Date.parse(data.last_customer_message_at) : null,
+    lastHumanMessageAtMs: data.last_human_message_at ? Date.parse(data.last_human_message_at) : null,
+  };
+}
+
+function matchNullable(query: any, column: string, value: string | null): any {
+  return value === null ? query.is(column, null) : query.eq(column, value);
+}
+
+function iso(value: number | null): string | null {
+  return value === null ? null : new Date(value).toISOString();
+}
+
+async function recordInboundTiming(conversationId: string, nowMs: number): Promise<string> {
+  // Retry if another webhook or human handoff changed the state we read.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const state = await readHandoff(conversationId);
+    const plan = planInboundReply(state, nowMs);
+    let query = supabase!.from("conversations").update({
+      next_wait_seconds: plan.nextState.nextWaitSeconds,
+      last_customer_message_at: iso(Math.max(nowMs, state.lastCustomerMessageAtMs ?? nowMs)),
+    }).eq("id", conversationId).eq("business_id", BUSINESS_ID)
+      .eq("control_mode", state.controlMode).eq("next_wait_seconds", state.nextWaitSeconds);
+    query = matchNullable(query, "last_customer_message_at", iso(state.lastCustomerMessageAtMs));
+    query = matchNullable(query, "last_human_message_at", iso(state.lastHumanMessageAtMs));
+    const { data, error } = await query.select("id").maybeSingle();
+    if (error) throw error;
+    if (data) return new Date(nowMs + plan.waitSeconds * 1000).toISOString();
+  }
+  throw new Error("instagram-webhook: concurrent handoff update, reply not scheduled");
+}
+
+async function recordHumanMessage(conversationId: string, event: InstagramMessage, nowMs: number) {
+  const state = applyHumanMessage(await readHandoff(conversationId), nowMs);
+  const { error } = await supabase!.from("conversations").update({
+    control_mode: state.controlMode, last_human_message_at: iso(state.lastHumanMessageAtMs),
+  }).eq("id", conversationId).eq("business_id", BUSINESS_ID);
+  if (error) throw error;
+  // Stop the conversation before any other writes. The dispatcher's final
+  // check also rejects already-claimed replies to messages she answered.
+  const { error: cancelError } = await supabase!.from("pending_replies")
+    .update({ status: "cancelled" }).eq("conversation_id", conversationId)
+    .eq("business_id", BUSINESS_ID).eq("status", "scheduled");
+  if (cancelError) throw cancelError;
+  const { error: draftError } = await supabase!.from("messages")
+    .update({ status: "cancelled" }).eq("conversation_id", conversationId)
+    .eq("business_id", BUSINESS_ID).eq("author", "ai").eq("status", "draft");
+  if (draftError) throw draftError;
+  const { error: insertError } = await supabase!.from("messages").insert({
+    business_id: BUSINESS_ID, conversation_id: conversationId, direction: "outbound",
+    author: "human", status: "sent", content: event.content,
+    platform_message_id: event.platformMessageId, created_at: iso(nowMs),
+  });
+  if (insertError && insertError.code !== "23505") throw insertError;
 }
 
 async function persistInboundMessages(payload: unknown): Promise<InsertedInboundMessage[]> {
@@ -140,11 +222,26 @@ async function persistInboundMessages(payload: unknown): Promise<InsertedInbound
 
   const inserted: InsertedInboundMessage[] = [];
   const conversationIdByCustomer = new Map<string, string>();
-  for (const { customerIdentifier, content } of extractInstagramMessages(payload)) {
+  for (const event of extractInstagramMessages(payload)) {
+    const { customerIdentifier, content, platformMessageId } = event;
+    // Meta echoes our own Send API message_id. Match IDs, never text: a
+    // human is allowed to write exactly the same words as an AI draft.
+    if (platformMessageId) {
+      const { data: known, error } = await supabase.from("messages").select("id")
+        .eq("business_id", BUSINESS_ID).eq("platform_message_id", platformMessageId).maybeSingle();
+      if (error) throw error;
+      if (known) continue;
+    }
     let conversationId = conversationIdByCustomer.get(customerIdentifier);
     if (!conversationId) {
       conversationId = await findOrCreateConversation("instagram", customerIdentifier);
       conversationIdByCustomer.set(customerIdentifier, conversationId);
+    }
+
+    const receivedAtMs = Date.now();
+    if (event.isEcho) {
+      await recordHumanMessage(conversationId, event, receivedAtMs);
+      continue;
     }
 
     const { data, error } = await supabase
@@ -154,11 +251,15 @@ async function persistInboundMessages(payload: unknown): Promise<InsertedInbound
         conversation_id: conversationId,
         direction: "inbound",
         content,
+        platform_message_id: platformMessageId,
+        created_at: iso(receivedAtMs),
       })
       .select("id")
       .single();
+    if (error?.code === "23505") continue;
     if (error) throw error;
-    inserted.push({ conversationId, messageId: data.id, content });
+    const sendAfter = await recordInboundTiming(conversationId, receivedAtMs);
+    inserted.push({ conversationId, messageId: data.id, content, receivedAtMs, sendAfter });
   }
   return inserted;
 }
@@ -212,16 +313,13 @@ Deno.serve(async (req: Request) => {
       console.error("instagram-webhook: failed to persist inbound message", error);
     }
 
-    // Draft (never send) an AI reply for each inbound message that was
-    // successfully persisted above. Same retry-avoidance reasoning as the
-    // persistence step: a failure here must never change the 2xx response
-    // Meta sees, so each message's reply generation is its own try/catch and
-    // a failure just gets logged. This only stores a draft `messages` row
-    // (direction: 'outbound') -- no Meta/Instagram send API is called here.
+    // The dispatcher sends due drafts; the webhook never sleeps or sends.
     if (supabase && BUSINESS_ID) {
       for (const inbound of insertedInboundMessages) {
         try {
-          await generateAndStoreReply({
+          const before = await readHandoff(inbound.conversationId);
+          if (before.lastHumanMessageAtMs !== null && before.lastHumanMessageAtMs >= inbound.receivedAtMs) continue;
+          const draft = await generateReplyDraft({
             supabase,
             businessId: BUSINESS_ID,
             conversationId: inbound.conversationId,
@@ -230,6 +328,34 @@ Deno.serve(async (req: Request) => {
             anthropicApiKey: ANTHROPIC_API_KEY,
             fetchImpl: fetch,
           });
+          if (!draft) continue;
+          const after = await readHandoff(inbound.conversationId);
+          if (after.lastHumanMessageAtMs !== null && after.lastHumanMessageAtMs >= inbound.receivedAtMs) continue;
+          const { data: outbound, error: draftError } = await supabase.from("messages").insert({
+            business_id: BUSINESS_ID, conversation_id: inbound.conversationId,
+            direction: "outbound", author: "ai", status: "draft", content: draft.replyText,
+          }).select("id").single();
+          if (draftError) throw draftError;
+          const { error: queueError } = await supabase.from("pending_replies").insert({
+            business_id: BUSINESS_ID, conversation_id: inbound.conversationId,
+            message_id: outbound.id, inbound_message_id: inbound.messageId,
+            send_after: inbound.sendAfter, status: "scheduled",
+          });
+          if (queueError) {
+            await supabase.from("messages").update({ status: "cancelled" }).eq("id", outbound.id);
+            throw queueError;
+          }
+          // Close the generation/enqueue race: human cancellation may have
+          // happened just before our draft or queue row existed.
+          const queuedState = await readHandoff(inbound.conversationId);
+          if (queuedState.lastHumanMessageAtMs !== null && queuedState.lastHumanMessageAtMs >= inbound.receivedAtMs) {
+            const { error: cancelError } = await supabase.from("pending_replies")
+              .update({ status: "cancelled" }).eq("message_id", outbound.id).eq("status", "scheduled");
+            if (cancelError) throw cancelError;
+            const { error: cancelDraftError } = await supabase.from("messages")
+              .update({ status: "cancelled" }).eq("id", outbound.id).eq("status", "draft");
+            if (cancelDraftError) throw cancelDraftError;
+          }
         } catch (error) {
           console.error("instagram-webhook: failed to generate reply", error);
         }

@@ -462,5 +462,155 @@ export async function processLeadAndBooking(params: {
   const scheduledAtMs = parseRequestedDateTime(content, { timezone, nowMs });
   if (scheduledAtMs === null) return;
 
+  // Rxx checks: use business config to validate service, hours, breaks, holidays
+  // and avoid creating appointments on ambiguous or explicitly human-handled
+  // messages. These are conservative: prefer asking for clarification over
+  // inventing a booking.
+
+  // 1) If a human handoff was explicitly requested, do not auto-book.
+  if (isHumanHandoffRequest(content)) {
+    console.log(`lead-agent: human handoff requested in ${conversationId}, skipping auto-book`);
+    return;
+  }
+
+  // 2) If config missing or incomplete, don't fabricate an appointment.
+  if (!config || !Array.isArray(config.services) || config.services.length === 0) {
+    console.log(`lead-agent: business config missing or services empty for ${businessId}, skipping appointment creation`);
+    return;
+  }
+
+  // 3) If message appears to indicate the customer is in another timezone or
+  // otherwise explicitly uncertain about local clock, avoid booking.
+  const abroadPattern = /yurt\s*d[iı]s|yurtd[iı]s|şu an yurt|yurt dışındayım|yurt\-dış/i;
+  if (abroadPattern.test(content ?? "")) {
+    console.log(`lead-agent: timezone-ambiguous phrase found in conversation ${conversationId}, skipping appointment creation`);
+    return;
+  }
+
+  // 4) Require the message to mention a known service name before creating an
+  // appointment; otherwise ask clarifying question (no DB action here beyond
+  // the lead upsert already done above).
+  const serviceName = matchServiceName(content, config);
+  if (!serviceName) {
+    console.log(`lead-agent: no matching service name in message for ${conversationId}, not creating appointment`);
+    return;
+  }
+
+  const service = config.services.find((s: any) => (s?.name || '').toLocaleLowerCase('tr') === serviceName.toLocaleLowerCase('tr'));
+  if (!service) {
+    console.log(`lead-agent: matched service name not present in config for ${businessId}, skipping appointment`);
+    return;
+  }
+
+  // 5) Working hours / closed days / breaks validation.
+  const durationMinutes = Number(service.duration_minutes) || 0;
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+    console.log(`lead-agent: invalid duration for service ${serviceName}, skipping appointment`);
+    return;
+  }
+
+  // Helper: get local YMD for an arbitrary instant
+  function getLocalYmdFromMs(ms: number, tz: string) {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(ms));
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+    return { year: get('year'), month: get('month'), day: get('day') };
+  }
+
+  // Helper: parse HH:MM string
+  function parseHm(s: string) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(s);
+    if (!m) return null;
+    return { h: Number(m[1]), m: Number(m[2]) };
+  }
+
+  const ymd = getLocalYmdFromMs(scheduledAtMs, timezone);
+  const workingHours = (config as any).working_hours ?? null;
+  // If working_hours is present, enforce it; if absent, be permissive and
+  // allow booking (but still conservative on other checks).
+  if (workingHours) {
+    const weekdayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+    const localWeekday = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'long' }).format(new Date(scheduledAtMs)).toLowerCase();
+    // If the config does not explicitly include this weekday, treat it as
+    // unspecified and permissive (legacy configs may list only a few days).
+    if (!Object.prototype.hasOwnProperty.call(workingHours, localWeekday)) {
+      // permissive: do not block booking when the weekday is not defined
+      console.log(`lead-agent: working_hours does not include ${localWeekday}, treating as unspecified (permissive)`);
+    } else {
+      const slots = workingHours[localWeekday] ?? [];
+      if (!Array.isArray(slots) || slots.length === 0) {
+        console.log(`lead-agent: business explicitly closed on ${localWeekday} (${businessId}), skipping appointment`);
+        return;
+      }
+
+      // Build UTC intervals for the day's working slots
+      const intervals: Array<{start:number,end:number}> = [];
+      for (const slot of slots) {
+        const opens = parseHm(slot.opens);
+        const closes = parseHm(slot.closes);
+        if (!opens || !closes) continue;
+        const startUtc = zonedTimeToUtcMs(ymd.year, ymd.month, ymd.day, opens.h, opens.m, timezone);
+        const endUtc = zonedTimeToUtcMs(ymd.year, ymd.month, ymd.day, closes.h, closes.m, timezone);
+        intervals.push({ start: startUtc, end: endUtc });
+      }
+      if (intervals.length === 0) {
+        console.log(`lead-agent: no valid working intervals for ${localWeekday}, skipping appointment`);
+        return;
+      }
+
+      const appointmentEndMs = scheduledAtMs + durationMinutes * 60_000;
+      // Appointment must fit entirely inside one working slot (no spanning a
+      // lunch break or closing boundary). Conservative approach.
+      const fits = intervals.some((iv) => scheduledAtMs >= iv.start && appointmentEndMs <= iv.end);
+      if (!fits) {
+        console.log(`lead-agent: appointment ${new Date(scheduledAtMs).toISOString()}-${new Date(appointmentEndMs).toISOString()} does not fit working intervals for ${localWeekday}`);
+        return;
+      }
+    }
+
+  }
+
+  // 6) Special closed dates and holiday exceptions (config.closed_dates or
+  // config.special_closed) prevent booking.
+  const closedDates = (config as any).closed_dates || (config as any).special_closed || null;
+  if (Array.isArray(closedDates) && closedDates.length > 0) {
+    const scheduledLocal = new Date(scheduledAtMs);
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(scheduledLocal);
+    const y = parts.find(p=>p.type==='year')?.value;
+    const m = parts.find(p=>p.type==='month')?.value;
+    const d = parts.find(p=>p.type==='day')?.value;
+    const isoDate = `${y}-${m}-${d}`;
+    if (closedDates.includes(isoDate) || closedDates.includes(isoDate.replace(/-0?/,'-'))) {
+      console.log(`lead-agent: scheduled date ${isoDate} is a closed date per business config, skipping appointment`);
+      return;
+    }
+  }
+
+  // 7) Check for overlapping appointments in the same business (conservative
+  // conflict detection). If any existing appointment overlaps this interval,
+  // prefer to not create it and let human operator resolve.
+  try {
+    const apptQuery = await supabase.from('appointments').select();
+    const appts = (apptQuery && apptQuery.data) || [];
+    const appointmentStart = scheduledAtMs;
+    const appointmentEnd = scheduledAtMs + durationMinutes * 60_000;
+    const overlapping = appts.find((a: any) => {
+      // Only consider same business and non-cancelled statuses if those
+      // fields exist.
+      if (a.business_id && a.business_id !== businessId) return false;
+      const aStart = Date.parse(a.scheduled_at);
+      const aDuration = Number(a.duration_minutes) || (a.service_duration_minutes || 0);
+      const aEnd = aStart + (Number(a.duration_minutes) || 0) * 60_000 || aStart + 60 * 60_000;
+      // Overlap test
+      return aStart < appointmentEnd && aEnd > appointmentStart;
+    });
+    if (overlapping) {
+      console.log(`lead-agent: detected overlapping appointment (${overlapping.id || 'unknown'}) for business ${businessId}, skipping auto-create`);
+      return;
+    }
+  } catch (err) {
+    console.log('lead-agent: appointment overlap check failed, skipping appointment creation', err);
+    return;
+  }
+
   await maybeCreateAppointment({ supabase, businessId, leadId, scheduledAtMs });
 }

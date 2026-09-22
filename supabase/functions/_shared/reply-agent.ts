@@ -379,7 +379,23 @@ export interface SupabaseLike {
   from(table: string): any;
 }
 
-export async function generateAndStoreReply(params: {
+export interface ReplyDraft {
+  replyText: string;
+  existingSummary: string | null;
+}
+
+// Does everything generateAndStoreReply below does, up to (and including)
+// the model_routing_log write, but stops short of deciding what happens to
+// the reply -- it neither inserts a `messages` row nor updates the
+// conversation summary. Returns `null` when reply generation was skipped
+// (missing API key/config) rather than throwing, mirroring
+// generateAndStoreReply's own early-return behavior.
+//
+// Used by instagram-webhook, which -- unlike whatsapp-webhook, which still
+// calls generateAndStoreReply directly and sends nothing -- has to schedule
+// the reply per Doğan's human-handoff timing rules (see handoff-agent.ts)
+// instead of storing/sending it immediately.
+async function computeReplyDraft(params: {
   supabase: SupabaseLike;
   businessId: string;
   conversationId: string;
@@ -387,13 +403,13 @@ export async function generateAndStoreReply(params: {
   inboundContent: string;
   anthropicApiKey: string | null | undefined;
   fetchImpl: FetchLike;
-}): Promise<void> {
+}): Promise<ReplyDraft | null> {
   const { supabase, businessId, conversationId, inboundMessageId, inboundContent, anthropicApiKey, fetchImpl } =
     params;
 
   if (!anthropicApiKey) {
     console.error("reply-agent: ANTHROPIC_API_KEY not configured, skipping reply generation");
-    return;
+    return null;
   }
 
   const { data: configRow, error: configError } = await supabase
@@ -404,7 +420,7 @@ export async function generateAndStoreReply(params: {
   if (configError) throw configError;
   if (!configRow) {
     console.error(`reply-agent: no business_config found for business ${businessId}, skipping reply generation`);
-    return;
+    return null;
   }
   const config: BusinessConfig = configRow.config ?? {};
 
@@ -446,6 +462,79 @@ export async function generateAndStoreReply(params: {
   } catch (error) {
     console.error("reply-agent: failed to write model_routing_log", error);
   }
+
+  return { replyText, existingSummary };
+}
+
+export async function generateReplyDraft(params: {
+  supabase: SupabaseLike;
+  businessId: string;
+  conversationId: string;
+  inboundMessageId: string;
+  inboundContent: string;
+  anthropicApiKey: string | null | undefined;
+  fetchImpl: FetchLike;
+}): Promise<ReplyDraft | null> {
+  return computeReplyDraft(params);
+}
+
+// Given whatever a conversation's summary is *right now* (read fresh, since
+// this runs however long after computeReplyDraft/generateReplyDraft did --
+// possibly after other messages) plus the exchange that just happened,
+// updates the stored summary. Used once a reply's fate (sent or the human
+// rep's own message instead) is actually known -- see
+// supabase/functions/instagram-reply-dispatcher/index.ts and the echo-handling
+// branch in supabase/functions/instagram-webhook/index.ts.
+export async function updateConversationSummaryAfterExchange(params: {
+  supabase: SupabaseLike;
+  conversationId: string;
+  inboundContent: string;
+  outboundContent: string;
+  anthropicApiKey: string | null | undefined;
+  fetchImpl: FetchLike;
+}): Promise<void> {
+  const { supabase, conversationId, inboundContent, outboundContent, anthropicApiKey, fetchImpl } = params;
+  try {
+    const { data: conversationRow, error: conversationError } = await supabase
+      .from("conversations")
+      .select("summary")
+      .eq("id", conversationId)
+      .maybeSingle();
+    if (conversationError) throw conversationError;
+    const existingSummary: string | null = conversationRow?.summary ?? null;
+
+    const newSummary = await foldConversationSummary({
+      existingSummary,
+      inboundContent,
+      outboundContent,
+      apiKey: anthropicApiKey,
+      fetchImpl,
+    });
+    const { error: summaryError } = await supabase
+      .from("conversations")
+      .update({ summary: newSummary })
+      .eq("id", conversationId);
+    if (summaryError) throw summaryError;
+  } catch (error) {
+    console.error("reply-agent: failed to update conversation summary", error);
+  }
+}
+
+export async function generateAndStoreReply(params: {
+  supabase: SupabaseLike;
+  businessId: string;
+  conversationId: string;
+  inboundMessageId: string;
+  inboundContent: string;
+  anthropicApiKey: string | null | undefined;
+  fetchImpl: FetchLike;
+}): Promise<void> {
+  const { supabase, businessId, conversationId, inboundMessageId, inboundContent, anthropicApiKey, fetchImpl } =
+    params;
+
+  const draft = await computeReplyDraft(params);
+  if (!draft) return;
+  const { replyText, existingSummary } = draft;
 
   const { error: insertError } = await supabase.from("messages").insert({
     business_id: businessId,

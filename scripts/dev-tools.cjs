@@ -136,17 +136,24 @@ function parseArgsString(input) {
     if ((char === '"' || char === "'") && !inQuotes) {
       inQuotes = true;
       quoteChar = char;
-    } else if (char === quoteChar && inQuotes) {
+      continue;
+    }
+
+    if (char === quoteChar && inQuotes) {
       inQuotes = false;
       quoteChar = '';
-    } else if (char === ' ' && !inQuotes) {
+      continue;
+    }
+
+    if (char === ' ' && !inQuotes) {
       if (current) {
         args.push(current);
         current = '';
       }
-    } else {
-      current += char;
+      continue;
     }
+
+    current += char;
   }
 
   if (current) args.push(current);

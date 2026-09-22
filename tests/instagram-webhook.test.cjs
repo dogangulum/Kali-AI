@@ -106,7 +106,7 @@ test('instagram: a second message from the same sender reuses the same conversat
   const { handler } = loadHandler('instagram', DB_ENV, mock.module);
 
   await postJson(handler, igTextPayload('1234567890', 'Merhaba'));
-  await postJson(handler, igTextPayload('1234567890', 'Nasılsınız?'));
+  await postJson(handler, igTextPayload('1234567890', 'Nasılsınız?', 'mid.SECOND'));
 
   assert.equal(mock.conversations.size, 1);
   assert.equal(mock.messages.length, 2);
@@ -119,7 +119,7 @@ test('instagram: a different sender gets its own conversation', async () => {
   const { handler } = loadHandler('instagram', DB_ENV, mock.module);
 
   await postJson(handler, igTextPayload('1234567890', 'Merhaba'));
-  await postJson(handler, igTextPayload('9998887777', 'Selam'));
+  await postJson(handler, igTextPayload('9998887777', 'Selam', 'mid.OTHER'));
 
   assert.equal(mock.conversations.size, 2);
   assert.equal(mock.messages.length, 2);

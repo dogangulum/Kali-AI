@@ -23,9 +23,7 @@ test('check-webhooks: response body read failure is reported as a failed check',
   assert.match(result.stdout, /body interrupted/);
 });
 
-test('check-webhooks: missing log path has a controlled error', {
-  todo: 'KAPSAM-05: parseArgs passes undefined to path.resolve instead of a usage error.',
-}, async () => {
+test('check-webhooks: missing log path has a controlled error', async () => {
   const result = await run({ args: ['--log-file'] });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /log|dosya|Kullanım/i);

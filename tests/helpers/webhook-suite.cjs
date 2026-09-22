@@ -51,7 +51,7 @@ async function unusedFetch() {
 // the functions it defines are simply in scope by the time index.ts's own
 // code runs, same as a bundler would produce.
 const REPLY_AGENT_FILE = resolve(__dirname, '../../supabase/functions/_shared/reply-agent.ts');
-const REPLY_AGENT_IMPORT_RE = /import\s*\{\s*generateAndStoreReply\s*\}\s*from\s*['"]\.\.\/_shared\/reply-agent\.ts['"];?/;
+const REPLY_AGENT_IMPORT_RE = /import\s*\{\s*(?:generateAndStoreReply|generateReplyDraft)\s*\}\s*from\s*['"]\.\.\/_shared\/reply-agent\.ts['"];?/;
 // Only `export function` / `export async function` / `export const` survive
 // stripTypeScriptTypes (interfaces/type aliases and type-only imports are
 // pure type syntax and are erased entirely) -- this strips just that
@@ -81,10 +81,12 @@ function loadLeadAgentSource() {
 
 function loadHandler(channel, overrides = {}, supabaseModule = unusedSupabaseModule, fetchImpl = unusedFetch) {
   const file = resolve(__dirname, '../../supabase/functions', `${channel}-webhook`, 'index.ts');
-  const code = loadReplyAgentSource() + '\n' + loadLeadAgentSource() + '\n' +
+  const handoffSource = stripTypeScriptTypes(readFileSync(resolve(__dirname, '../../supabase/functions/_shared/handoff-agent.ts'), 'utf8')).replace(EXPORT_RE, '');
+  const code = loadReplyAgentSource() + '\n' + loadLeadAgentSource() + '\n' + handoffSource + '\n' +
     stripTypeScriptTypes(readFileSync(file, 'utf8'))
       .replace(SUPABASE_IMPORT_RE, 'const { createClient } = __supabaseModule;')
       .replace(REPLY_AGENT_IMPORT_RE, '')
+      .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/_shared\/handoff-agent\.ts['"];?/, '')
       .replace(LEAD_AGENT_IMPORT_RE, '');
   const tokenKey = `META_${channel.toUpperCase()}_VERIFY_TOKEN`;
   const env = { [tokenKey]: TOKEN, META_APP_SECRET: SECRET, ...overrides };
@@ -142,6 +144,21 @@ function loadLeadAgentModule() {
   return { ...module_, errors, logs };
 }
 
+function loadDispatchAgentModule() {
+  const files = ['reply-agent', 'meta-send', 'handoff-agent', 'dispatch-agent'];
+  const code = files.map((name) => {
+    const file = resolve(__dirname, `../../supabase/functions/_shared/${name}.ts`);
+    return stripTypeScriptTypes(readFileSync(file, 'utf8'))
+      .replace(/import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"];?/g, '')
+      .replace(EXPORT_RE, '');
+  }).join('\n');
+  const errors = [];
+  const module_ = runInNewContext(`${code}\n;({ dispatchDueReplies });`, {
+    console: { log() {}, error: (...args) => errors.push(args) },
+  }, { timeout: 1000 });
+  return { ...module_, errors };
+}
+
 // A representative (fake, not Kali-specific) business_config.config blob,
 // matching the shape documented in config/business-config.example.md, used
 // as createMockSupabase's default so reply-generation tests don't each have
@@ -194,6 +211,8 @@ function createMockSupabase({
   failLeadUpdate = false,
   failAppointmentSelect = false,
   failAppointmentInsert = false,
+  failInsertPendingReply = false,
+  beforeQuery = async () => {},
 } = {}) {
   const conversations = new Map();
   const conversationRecords = new Map();
@@ -201,59 +220,70 @@ function createMockSupabase({
   const modelRoutingLogs = [];
   const leads = [];
   const appointments = [];
+  const pendingReplies = [];
   let nextId = 1;
   let nextMessageId = 1;
   let nextLeadId = 1;
   let nextAppointmentId = 1;
+  let nextPendingReplyId = 1;
   const keyOf = (row) => `${row.business_id}|${row.platform}|${row.customer_identifier}`;
+
+  // Lazy execution matches supabase-js: collect every filter before a
+  // read/update runs. Conditional updates match and mutate synchronously,
+  // modelling the indivisible database claim (no await in between).
+  function rowBuilder(table, rows, updateError = false, selectError = false) {
+    const filters = {};
+    let patch = null;
+    let execution;
+    const execute = () => execution ??= (async () => {
+      await beforeQuery({ table, operation: patch ? 'update' : 'select', filters, patch });
+      if (patch && updateError) return { data: null, error: new Error(`mock: ${table} update failed`) };
+      if (!patch && selectError) return { data: null, error: new Error(`mock: ${table} select failed`) };
+      const matched = rows().filter((row) => Object.entries(filters).every(([key, value]) => row[key] === value));
+      if (patch) for (const row of matched) Object.assign(row, patch);
+      return { data: matched.map((row) => ({ ...row })), error: null };
+    })();
+    const builder = {
+      select: () => builder,
+      eq: (column, value) => { filters[column] = value; return builder; },
+      is: (column, value) => { filters[column] = value; return builder; },
+      update: (value) => { patch = value; return builder; },
+      then: (resolve, reject) => execute().then(resolve, reject),
+      maybeSingle: async () => {
+        const result = await execute();
+        if (result.error) return result;
+        if (result.data.length > 1) return { data: null, error: new Error('mock: multiple rows') };
+        return { data: result.data[0] ?? null, error: null };
+      },
+    };
+    return builder;
+  }
 
   const client = {
     from(table) {
       if (table === 'conversations') {
-        const builder = { filters: {}, insertRow: null, updatePatch: null };
-        builder.select = () => builder;
-        builder.eq = (column, value) => {
-          builder.filters[column] = value;
-          if (builder.updatePatch) {
-            // Terminal call for `.update(patch).eq(column, value)` -- the
-            // real supabase-js client resolves this directly as a promise,
-            // no further chaining needed.
-            return (async () => {
-              if (failConversationSummaryUpdate) return { error: new Error('mock: conversation update failed') };
-              const record = conversationRecords.get(value);
-              if (record) Object.assign(record, builder.updatePatch);
-              return { error: null };
-            })();
-          }
-          return builder;
-        };
-        builder.maybeSingle = async () => {
-          if (failSelect) return { data: null, error: new Error('mock: conversation select failed') };
-          if ('id' in builder.filters && Object.keys(builder.filters).length === 1) {
-            const record = conversationRecords.get(builder.filters.id);
-            return { data: record ? { summary: record.summary ?? null } : null, error: null };
-          }
-          const key = `${builder.filters.business_id}|${builder.filters.platform}|${builder.filters.customer_identifier}`;
-          const id = conversations.get(key);
-          return { data: id ? { id } : null, error: null };
-        };
+        const builder = rowBuilder(table, () => [...conversationRecords.values()], failConversationSummaryUpdate, failSelect);
         builder.insert = (row) => { builder.insertRow = row; return builder; };
         builder.single = async () => {
           if (failInsertConversation) return { data: null, error: new Error('mock: conversation insert failed') };
           const id = `conv-${nextId++}`;
           conversations.set(keyOf(builder.insertRow), id);
-          conversationRecords.set(id, { id, ...builder.insertRow, summary: builder.insertRow.summary ?? null });
+          conversationRecords.set(id, { id, control_mode: 'bot', next_wait_seconds: 60,
+            last_customer_message_at: null, last_human_message_at: null,
+            ...builder.insertRow, summary: builder.insertRow.summary ?? null });
           return { data: { id }, error: null };
         };
-        builder.update = (patch) => { builder.updatePatch = patch; return builder; };
         return builder;
       }
       if (table === 'messages') {
-        const builder = {};
+        const builder = rowBuilder(table, () => messages);
         builder.insert = (row) => {
           const result = failInsertMessage
             ? { data: null, error: new Error('mock: message insert failed') }
             : (() => {
+                if (row.platform_message_id && messages.some((message) => message.platform_message_id === row.platform_message_id)) {
+                  return { data: null, error: { code: '23505' } };
+                }
                 const id = `msg-${nextMessageId++}`;
                 messages.push({ ...row, id });
                 return { data: { id }, error: null };
@@ -261,6 +291,23 @@ function createMockSupabase({
           return {
             select: () => ({ single: async () => result }),
             then: (resolve) => resolve({ error: result.error }),
+          };
+        };
+        return builder;
+      }
+      if (table === 'pending_replies') {
+        const builder = rowBuilder(table, () => pendingReplies);
+        builder.insert = (row) => {
+          const result = failInsertPendingReply
+            ? { data: null, error: new Error('mock: pending reply insert failed') }
+            : (() => {
+                const record = { id: `pending-${nextPendingReplyId++}`, status: 'scheduled', ...row };
+                pendingReplies.push(record);
+                return { data: { ...record }, error: null };
+              })();
+          return {
+            select: () => ({ single: async () => result }),
+            then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
           };
         };
         return builder;
@@ -358,6 +405,7 @@ function createMockSupabase({
     modelRoutingLogs,
     leads,
     appointments,
+    pendingReplies,
   };
 }
 
@@ -515,5 +563,6 @@ module.exports = {
   createMockSupabase,
   loadReplyAgentModule,
   loadLeadAgentModule,
+  loadDispatchAgentModule,
   DEFAULT_BUSINESS_CONFIG,
 };

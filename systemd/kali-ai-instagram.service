@@ -1,0 +1,34 @@
+# Systemd Servis Dosyası: Instagram Webhook
+# Konum: /etc/systemd/system/kali-ai-instagram.service
+# Etkinleştirme: sudo systemctl enable --now kali-ai-instagram
+
+[Unit]
+Description=Kali AI Instagram Webhook (Deno)
+Documentation=https://github.com/<KULLANICI>/<REPO>
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/kali-ai
+Environment=DENO_DIR=/root/.deno/cache
+EnvironmentFile=/opt/kali-ai/.env.local
+ExecStart=/root/.deno/bin/deno run --allow-net --allow-env=META_INSTAGRAM_VERIFY_TOKEN,META_APP_SECRET supabase/functions/instagram-webhook/index.ts
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=3
+StandardOutput=append:/var/log/kali-ai/instagram-out.log
+StandardError=append:/var/log/kali-ai/instagram-error.log
+SyslogIdentifier=kali-ai-instagram
+
+# Güvenlik
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/kali-ai /opt/kali-ai
+
+[Install]
+WantedBy=multi-user.target
