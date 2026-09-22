@@ -124,13 +124,42 @@ function getFixtureChoice() {
   });
 }
 
+function parseArgsString(input) {
+  const args = [];
+  let current = '';
+  let inQuotes = false;
+  let quoteChar = '';
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+
+    if ((char === '"' || char === "'") && !inQuotes) {
+      inQuotes = true;
+      quoteChar = char;
+    } else if (char === quoteChar && inQuotes) {
+      inQuotes = false;
+      quoteChar = '';
+    } else if (char === ' ' && !inQuotes) {
+      if (current) {
+        args.push(current);
+        current = '';
+      }
+    } else {
+      current += char;
+    }
+  }
+
+  if (current) args.push(current);
+  return args;
+}
+
 function getWebhookArgs() {
   console.log('\nEk argümanlar (örn: --log-file logs/webhook-health.log):');
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(resolve => {
     rl.question('Argümanlar (boş bırakılabilir): ', input => {
       rl.close();
-      resolve(input.trim() ? input.trim().split(/\s+/) : []);
+      resolve(input.trim() ? parseArgsString(input.trim()) : []);
     });
   });
 }

@@ -52,10 +52,20 @@ function line() {
 
 async function runFixture(fileName) {
   const channel = channelFor(fileName);
+  if (!channel) throw new Error(`Bilinmeyen fixture kanalı: ${fileName}`);
   const filePath = path.join(FIXTURES_DIR, fileName);
   const body = fs.readFileSync(filePath, 'utf8');
 
   console.log(`\n=== ${fileName} (${channel}) ===`);
+
+  if (fileName.startsWith('whatsapp-booking-')) {
+    const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '../tests/scenarios/booking-cases.json'), 'utf8'));
+    const scenario = catalog.cases.find((entry) => `whatsapp-booking-${entry.id}.json` === fileName);
+    if (!scenario) throw new Error('Fixture randevu kataloğuna bağlı değil.');
+    console.log(`Test saati: ${scenario.clock ?? catalog.clock} (${catalog.timezone}); test düzeneğinde bu saati sabitleyin.`);
+    console.log(`Ön koşul: ${scenario.given}`);
+    console.log(`Beklenen davranış (kabul motoru henüz yok): ${scenario.expect}`);
+  }
 
   const mock = createMockSupabase();
   const { handler } = loadHandler(channel, ENV, mock.module, fakeAnthropicFetch());
@@ -84,6 +94,7 @@ async function runFixture(fileName) {
 
   if (inbound.length === 0) {
     console.log('Kaydedilen mesaj yok (ör. sadece "okundu" bildirimi gibi bir durum olabilir).');
+    if (!fileName.includes('read-receipt')) hadFailure = true;
     return;
   }
 
@@ -102,15 +113,30 @@ async function runFixture(fileName) {
       console.log(`Neden: ${decision.reason}`);
     } else {
       console.log('Yönlendirme kaydı yok (yapay zeka cevabı üretilemedi).');
+      hadFailure = true;
     }
 
     const reply = outbound.find((o) => o.conversation_id === msg.conversation_id);
     console.log(reply ? `Hazırlanan taslak cevap: "${reply.content}"` : 'Taslak cevap oluşturulmadı.');
+    if (!reply) hadFailure = true;
   }
 }
 
 async function main() {
-  const files = fs.readdirSync(FIXTURES_DIR).filter((f) => f.endsWith('.json'));
+  const args = process.argv.slice(2);
+  if (args.length === 1 && args[0] === '--all') {
+    process.exitCode = await require('./run-scenarios.cjs').runAll();
+    return;
+  }
+  let files = fs.readdirSync(FIXTURES_DIR).filter((f) => f.endsWith('.json'));
+  if (args.length) {
+    if (args.length !== 2 || args[0] !== '--fixture' || !files.includes(args[1])) {
+      console.error('Kullanım: node scripts/dry-run.cjs [--all | --fixture DOSYA.json]');
+      process.exitCode = 2;
+      return;
+    }
+    files = [args[1]];
+  }
   if (files.length === 0) {
     console.error('tests/fixtures altında hiç örnek dosya bulunamadı.');
     process.exitCode = 1;
@@ -143,4 +169,4 @@ async function main() {
   console.log('anahtarıyla docs/TEST_SENARYOLARI.md planını uygulayın.');
 }
 
-main();
+main().catch((error) => { console.error(error.message); process.exitCode = 1; });

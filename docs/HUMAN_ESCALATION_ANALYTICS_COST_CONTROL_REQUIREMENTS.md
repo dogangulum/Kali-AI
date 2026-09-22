@@ -1,127 +1,107 @@
-# İnsan Devri, Analiz/Takip ve Maliyet Kontrolü Gereksinimleri
+﻿# İnsan Devri, Analiz/Takip ve Maliyet Kontrolü Gereksinimleri
 
-Bu belge, projede henüz detaylandırılmamış üç ana alanı kapsamlı ve kodlanabilir şekilde açıklar:
+Bu belge, proje içindeki mevcut şema ve gereksinim belgeleriyle tutarlı şekilde üç alanı açıklar:
 
-1. Bir konuşmanın ne zaman ve nasıl Ayşe'ye (veya başka bir insan temsilciye) devredileceği (human escalation)
-2. Hangi olayların kaydedileceği, funnel'ın nasıl izleneceği ve analiz/raporlama yapılandırmasının nasıl olacağı (analysis and tracking)
-3. Hangi yapay zeka modelinin ne zaman kullanılacağına dair kararların nasıl günlendiği, hangi verilerle izlendiği ve maliyet kontrolünün nasıl yapıldığı (cost control and model routing)
+1. Bir konuşmanın ne zaman ve nasıl Ayşe'ye (veya başka bir insan temsilciye) devredileceği
+2. Hangi olayların kaydedileceği, funnel'ın nasıl izleneceği ve analiz/raporlama yapılandırmasının nasıl olacağı
+3. Hangi yapay zeka modelinin ne zaman kullanılacağına dair kararların nasıl verileceği ve maliyet kontrolünün nasıl yapılacağı
 
-Amaç, bu üç alanı aynı derinlikte ve aynı titizlikle tanımlamak, böylece bir başka geliştirici ya da başka yapay zeka bu planı alıp doğrudan uygulamaya geçebilmelidir.
+Amaç
+- Sistem davranışını güvenli ve izlenebilir tutmak
+- İnsan müdahalesi gerektiğinde net bir akış sağlamak
+- Model seçimi ve maliyet kontrolünü operasyonel kararlarla bağlantılı hale getirmek
 
-Bu belge, mevcut veritabanı modeli (`conversations`, `messages`, `leads`, `appointments`, `audit_log`, `escalations`, `model_routing_log`, `funnel_events`, `business_config`, `approvals`) ve proje kurallarına göre yazılmıştır. Yeni mimari karar eklenmez; mevcut şema ve planlama çerçevesi içinde net, uygulanabilir bir gereksinim seti sunulur.
-
----
-
-## 1) Genel amaç ve temel prensipler
-
-### 1.1. Üç sistemin ortak amacı
-
-Bu üç alanın ortak hedefi şudur:
-
-- müşteriye özel, doğru ve güvenli bir insan müdahalesi akışı kurmak
-- sistem davranışlarını geriye dönük izlenebilir hale getirmek
-- yatırımın/AI kullanımının maliyetini tanımlamak ve kontrol etmek
-- her kararın neden verildiğini kayıt altında tutmak
-
-### 1.2. Temel prensipler
-
-1. İnsan devri, otomasyonun güvenli sınırlarını korumak içindir; insan müdahalesi gerektiren bir durum otomatik cevapla kapatılmaz.
-2. Her olay kaydedilir; kayıtlar izlenebilir ve tartışılabilir olmalıdır.
-3. Funnel izleme, sadece birkaç sayım değil, gerçekten bir müşteri akışının adım adım ilerlemesini takip etmeyi amaçlamalıdır.
-4. Maliyet kontrolü, "her mesajı güç modelle işleme" mantığına değil; doğru modelin doğru durumda seçilmesine dayanmalıdır.
-5. Kimse, neyi neden yaptığını açıklayamayan bir sistemle üretime geçmemelidir. Her karar için açıklama ve kayıt gerekir.
+Schema uyumluluğu ve kritik notlar
+- `funnel_events.event_type` şema tarafından sınırlandırılmıştır: `reel_view`, `dm_started`, `lead_qualified`, `appointment_booked`, `customer_converted`.
+- Bu nedenle `lead_score_updated`, `lead_disqualified`, `appointment_cancelled`, `appointment_confirmed`, `appointment_rescheduled` gibi değerler `funnel_events` için doğrudan kullanılamaz; bunlar `audit_log` üzerinden izlenmelidir.
+- `conversations.status` sadece `open`, `closed`, `escalated` değerlerini kabul eder.
+- `escalations.status` sadece `open`, `in_progress`, `resolved` değerlerini kabul eder.
+- `model_routing_log` sabit sütunlar taşır; JSON payload alanı yoktur. Yalnız `audit_log.payload` JSON'dur. Bir routing satırı çağrı sonucu, token kullanımı, retry veya karar nedeni alanlarını tek başına içermez.
 
 ---
 
-## 2) İnsan devri (Escalation) gereksinimleri
+## 1) İnsan devri (Escalation) gereksinimleri
 
-### 2.1. İnsan devri niçin gerekir?
+### 1.1. İnsan devri niçin gerekir?
 
-Otomatik sistem bazı durumlarda güvenli ve doğru karar alamaz. Aşağıdakiler, insan müdahalesi gerektiren tanımlı durumlardır:
+Otomatik sistem bazı durumlarda güvenli ve doğru karar alamaz. Aşağıdaki durumlar insan müdahalesi gerektirir:
 
-- müşteri net bir niyeti ifade etmemiş fakat çok önemli görünmektedir
-- müşteri arasındaki bilgiler çelişkili ve net değil
-- fiyat, ürün, rakip karşılaştırma veya kampanya talebi insan yorumunu gerektiriyor
-- müşterinin davranışı agresif, şikâyetçi veya manipülatif ise
-- fiyat ve hizmet uyumu doğrudan insan onayı gerektiriyorsa
-- müşteri için özel düzenleme, özel paket, premium plan veya özel durum söz konusuysa
-- iletişimde birden fazla konu bir arada sürüyorsa ve sistemin hata yapma riski yüksekse
-- sistemin yanlış işleyişi ya da teknik sorun nedeniyle güvenilir bir cevap üretilemiyorsa
-- müşterinin güvenlik, privacy, yasal risk veya üretimle ilgili kapsam dışında bir istekleri varsa
+- müşteri niyeti net değil ama yüksek değerli bir lead potansiyeli var
+- fiyat, paket, özel durum veya premium talebi söz konusu
+- müşteri agresif, şikâyetçi veya anlatımı çelişkili
+- birden fazla niyet aynı anda ortaya çıkıyor
+- sistem cevabın güvenli olmadığını düşünüyor
+- webhook, veri kaybı veya yapılandırma hatası gibi teknik bir problemin ardından güvenli bir cevap üretilemiyor
+- müşterinin özel izin veya hassas özel koşul talebinde bulunduğu durumlar
 
-### 2.2. İnsan devri zamanlaması
+### 1.2. İnsan devri zamanlaması
 
 Bir konuşma farklı aşamalarda Ayşe'ye devredilebilir:
 
-- doğrudan girişte (işleme başlamadan önce)
-- lead qualification sonrası, fakat randevu belirlenmeden önce
-- müşteri şartlarını netleştirme aşamasında
-- randevu çakışması veya sistem kararıyla ilgili belirsizlikte
-- müşterinin şikâyeti ya da karşı çıkarak engel oluşturması durumunda
-- otomatik cevap oluşturulamadığında
+- doğrudan girişte
+- lead qualification sonrası, randevu tamamlanmadan önce
+- ihtiyaç netleşmeden önce
+- randevu çakışması veya belirsizlikte
+- müşteri şikâyeti / itirazında
+- otomatik sistemin cevap üretemediği durumlarda
 
-### 2.3. Devredilecek konuşmanın belirleyici göstergeleri
+### 1.3. Devri tetikleyen sinyaller
 
-Aşağıdaki sinyaller, konuşmanın insana devredilmesi gerektiğini işaret eder:
+Aşağıdaki koşullar devri tetikler:
 
-- müşteri tek bir cümleyle değil, uzunca konuşma yapıyor ve ana amacını net ifade etmiyor
-- bir randevu talebi var fakat istemiş olduğu saat, gün ve hizmet bilgisi eksik
-- müşteri önceki mesaja göre tutarsız davranıyor
-- fiyat, indirim, jest, özel koşul veya buna benzer talepler var
-- müşteri aynı anda biriyle konuşuluyormuş gibi farklı hedefler veya farklı hizmetler söylüyor
-- konuşma daha önce bir lead qualification sonucuyle çakışıyor ve işin netleşmesini insanın yapması gerekiyor
-- otomatik sistem mesajı hazırlamakla kalmayıp gerçek bir müşteri temsilcisinin devreye girmesi gerektiği açıkça görülüyor
+- müşteri tek cümlelik değil, uzun ve çok yönlü konuşuyor; net amaç ortaya çıkmıyor
+- randevu talebi var ama hizmet, gün, saat veya fiyat bilgisi eksik
+- müşteri önceki mesajla çelişkili davranıyor
+- fiyat/indirim / promosyon / özel paket isteniyor
+- aynı konuşmada birden fazla farklı niyet birlikte görülüyor
+- konuşma lead_score ve randevu kararının insan müdahalesine ihtiyaç duyduğunu gösteriyor
+- sistemin güvenli davranışı bozuluyor veya `business_config` okunamıyor
 
-### 2.4. Devri tetikleyen senaryolar
+### 1.4. Devri tetikleyen örnek senaryolar
 
 #### Senaryo A: yüksek olasılıkla lead ama net bilgi eksik
 
 Mesaj:
 
-"Aslında biraz düşünüyordum, bir de telefonla konuşmak isterim. Uygun zamanı nasıl seçiyorum?"
+"Aslında biraz düşünüyordum, telefonla konuşmak isterim. Hangi saatler uygun?"
 
 Bu durumda:
-
-- lead potansiyeli var
-- ama sistemin tek başına karar verdiği ve randevu verdiği durum uygun değil
+- lead potansiyeli yüksektir
+- sistem tek başına randevu veremez
 - insan devri uygundur
 
-#### Senaryo B: müşteri agresif / şikâyetçi / itirazlı
+#### Senaryo B: müşteri agresif / şikâyetçi
 
 Mesaj:
 
 "Bu kadar pahalıya geliyorsunuz, başka yerde daha ucuz. Siz ne yapıyorsunuz?"
 
 Bu durumda:
-
-- fiyat anlaşmazlığı var
-- indirim / özel fiyat isteme ihtimali var
-- müşteri baskı kuruyor
+- fiyat üzerinde pazarlık / şikâyet riski vardır
 - insan müdahalesi gerekir
 
-#### Senaryo C: birden fazla niyet bir arada
+#### Senaryo C: çoklu niyet
 
 Mesaj:
 
-"Önce fiyatı öğrenmek istiyorum ama sonra salı günü uğramak için randevu ayarlayalım. Fakat da hafta sonu da olabilir."
+"Fiyatı öğrenmek istiyorum ama salı günü randevu da ayarlayayım; hafta sonu da olur mu?"
 
 Bu durumda:
-
-- birden fazla niyet aynı anda var
-- uygunluk kontrolü ve müşteri kez seviyeleri insan tarafından yönetilebilir
+- hem bilgi hem randevu niyeti aynı anda gelir
+- kararın insan tarafından netleştirilmesi daha güvenlidir
 
 #### Senaryo D: teknik veya veri sorunu
 
 Aşağıdakiler insan devrine işaret eder:
 
-- webhook mesajı bozuk ama müşteri yine de anlamlı bir durumdan bahsediyor
-- veritabanı write hatası ortaya çıkıyor
-- `business_config` okunamıyor veya özel bir hata var
-- mesajın içeriği birden fazla platformdan gelmiş ve birbiriyle çelişiyor
+- webhook iletileri bozuk ama müşteri anlamlı şekilde devam ediyor
+- mesaj kaydı başarısız oluyor
+- `business_config` okunamıyor
+- aynı konuşma birden fazla platformdan çelişkili işleniyor
 
-### 2.5. `escalations` tablosu ile veri modeli
+### 1.5. `escalations` tablosu ile veri modeli
 
-`escalations` tablosu şu alanlara sahip olmalıdır:
+`escalations` tablosu şu alanlara sahiptir:
 
 - `id`
 - `business_id`
@@ -132,118 +112,97 @@ Aşağıdakiler insan devrine işaret eder:
 - `created_at`
 - `resolved_at`
 
-Bu tablonun hedefi şudur:
+Bu tablonun amacı:
 
-- konuşma neden insan devrine gittiğini kaydetmek
-- devri kimin üstlendiğini görmek
-- hangi devrin çözülüp çözülmediğini takip etmek
-- konuşmanın tarihsel akışını süreklilik içinde izlemek
+- konuşma neden insan devrine gittiğini kayıt altına almak
+- kimin üstlendiğini görmek
+- çözüm durumunu takip etmek
+- konuşmanın tarihsel akışını izlemek
 
-### 2.6. İnsan devri akışı (tam adım adım)
+### 1.6. İnsan devri akışı
 
-Tek tip bir human escalation pipeline oluşturulmalıdır:
+Tek tip bir escalation pipeline oluşturulmalıdır:
 
-1. İnbound mesaj alınır ve ilgili `conversation_id` bulunur.
-2. `lead qualification` ve `randevu` kontrolleri yapılır.
+1. Gelen mesaj alınır ve ilgili `conversation_id` belirlenir.
+2. `lead qualification` ve `booking` kontrolü yapılır.
 3. Sistem, devreye girip girmeyeceğine karar verir.
-4. Devreye girecekse `escalations` tablosuna kayıt oluşturur.
-5. `status = 'open'`, `assigned_to = 'Ayşe'` veya atanan temsilci.
-6. `audit_log` içine `escalation_created` event'i yazılır.
+4. Devreye girecekse `escalations` kaydı açılır.
+5. `status = 'open'` ve `assigned_to = 'Ayşe'` veya atanmış temsilci.
+6. `audit_log` içinde `escalation_created` event'i yazılır.
 7. İnsan tarafına kısa, net ve bağlamlı bir özet iletilir.
 8. İnsan müdahalesi sonrası sonuç ne olursa olsun `status` güncellenir.
-9. `resolved_at` yazılır ve konuşma `conversations.status` uygun şekilde güncellenir.
-10. Gerekirse yeni bir lead veya appointment kaydı oluşturulur.
+9. `resolved_at` yazılır ve gerekli durum güncellemesi yapılır.
+10. Gerekirse yeni `lead` veya `appointment` kaydı oluşturulur.
 
-### 2.7. İnsan devri için gerekli bağlam bilgisi
+### 1.7. İnsan devri için gerekli bağlam bilgisi
 
 İnsan tarafına iletilecek özet aşağıdakileri içermelidir:
 
-- müşteri kimliği / kanal / conversation_id
-- konuşmanın son 5-15 mesajı (özetlenmiş)
-- lead qualification skoru ve altta yatan nedenler
-- mevcut `appointment` durumu (varsa)
-- istenen hizmet / gün / saat / fiyat bilgisi
-- çakışma veya riskler varsa bunlar net olarak belirtilmeli
-- otomatik sistemin neye karar verdiği, hangi kuralın devreye girdiği anlatılmalı
+- kanal ve `conversation_id`
+- son 5-15 mesajın özeti
+- `lead` durumu ve skor bilgisi
+- mevcut `appointment` durumu
+- istenen hizmet, gün, saat ve fiyat bilgisi
+- çakışma / risk bilgisi
+- sistemin hangi kuralın devreye girdiği
 
-Bu, Ayşe'nin gerekli bilgileri hızlıca anlaması için çok önemlidir.
+### 1.8. Devri kapatma ve durum güncellemesi
 
-### 2.8. Devri kapatma ve durum güncellemesi
+Bir escalation şu şekilde kapatılır:
 
-Bir escalation şu üç şekilde kapatılabilir:
+- müşteriyle iletişim tamamlandı
+- randevu oluşturuldu
+- insan takibi gerçekten tamamlandı; sistemin devam edememesi veya hâlâ takip gerekmesi çözüm değildir (bu durumda 1.9 uygulanır)
 
-- çözülmüş ve müşteriyle iletişim tamamlandı
-- randevu oluşturuldu ve müşteri takip altında
-- sistemin otomatik devri çözemediği, buton / takip gerektiren bir durum olarak kapandı
-
-Kapatıldığında şu işlemler yapılmalı:
+Kapatıldığında şunlar olur:
 
 - `escalations.status = 'resolved'`
 - `resolved_at = now()`
 - gerekli `audit_log` kaydı
-- gerekirse yeni `funnel_event` veya `lead` güncellemesi
+- gerekiyorsa `funnel_events` veya `lead` güncellemesi
 
-### 2.9. İnsan devri için güvenlik ve etik kurallar
+### 1.9. Devredilen konuşmanın beklemede kalması
 
-- konuşma, müşteri özel verileri ve gizlilik gerekliliklerine uygun çalıştırılmalı
-- kullanıcının başka bir müşterinin verisini görmek için erişim yetkisi olmamalı
-- insan devri, promosyon/indirim dayatmasına dönüştürülmemeli
-- bir lead'i insan devri ile kapatmak, otomatik onay anlamına gelmez
+Özellikle şu senaryolar önemlidir:
+
+- Devredilen bir konuşmaya kimse cevap vermeyebilir.
+- Bu durumda oluşturulan escalation `open` veya `in_progress` olarak kalır.
+- Sistem otomatik olarak randevu veya lead oluşturmaz.
+- `conversations.status` `escalated` olarak kalmalıdır.
+- Bu durum bir "çözülmüş" karar değil, "bekleyen insan iş yükü" olarak izlenmelidir.
+
+### 1.10. Güvenlik ve etik kurallar
+
+- müşteri verileri sadece yetkili kişilere görünür olmalı
+- aynı müşteri verisi farklı işletmeler arasında karışmamalı
+- insan devri, promosyon/indirim dayatması olarak kullanılmamalı
+- lead'i insan devri ile kapatmak otomatik onay değildir
 
 ---
 
-## 3) Analiz / takip (tracking and analysis) gereksinimleri
+## 2) Analiz / takip (Tracking and Analysis) gereksinimleri
 
-### 3.1. Neden takip gerekir?
+### 2.1. Neden takip gerekir?
 
-Sistemin amacı yalnızca cevap üretmek değil, müşteri akışını ölçmek ve geliştirmek olmalıdır. Bu nedenle hangi olayların kaydedileceği net tanımlanmalıdır.
+Sistem sadece cevap üretmekle kalmamalı; müşteri akışını ölçmelidir. Bu amaçla hangi olaylar kaydedileceği net olmalıdır.
 
-`funnel_events` tablosu, bu tür olayların tamamı için temel bir yerdir. `audit_log` daha geniş sistem olaylarını tutarken, `funnel_events` daha çok müşteri akışının iş/performans tarafını izler.
+`funnel_events` tablosu temel müşteri akışı olaylarını kapsar. `audit_log` ise daha geniş sistem olaylarını ve teknik/operasyonel hikâyeyi kaydeder.
 
-### 3.2. Aşağıdaki olaylar kaydedilmeli
+### 2.2. `funnel_events` için izin verilen event türleri
 
-#### 3.2.1. Toplama / trafik olayları
+Şema tarafından izin verilenler:
 
-- `dm_started` : müşterinin ilk DM / ilk mesajı attığı tarih ve kanal
-- `reel_view` : reklam/örnek içerik görüntülenmiş olabilir, ancak bu olay ürün/reklam tarafı için kullanılır
+- `reel_view`
+- `dm_started`
+- `lead_qualified`
+- `appointment_booked`
+- `customer_converted`
 
-#### 3.2.2. Lead ve lead quality olayları
+Not: `lead_score_updated`, `lead_disqualified`, `appointment_cancelled`, `appointment_confirmed`, `appointment_rescheduled` gibi olaylar `audit_log` içinde izlenir; `funnel_events` için ayrı bir `event_type` eklenmez.
 
-- `lead_qualified` : bir lead başarılı şekilde nitelikli hale geldi
-- lead_score_updated : skor değiştiğinde kayıt
-- lead_disqualified : uygun olmayan lead kapandı
+### 2.3. `audit_log` için olay örnekleri
 
-#### 3.2.3. Randevu olayları
-
-- `appointment_booked` : randevu hazırlandı
-- `appointment_confirmed` : randevu müşteriden onay aldı
-- `appointment_cancelled` : iptal
-- `appointment_rescheduled` : kaydırma
-
-#### 3.2.4. Müşteri dönüşüm olayları
-
-- `customer_converted` : müşteri, randevu sonrası başarılı şekilde müşteri oldu
-
-### 3.3. `funnel_events` tablosu ile model
-
-`funnel_events` tablosu şu alanları taşımalıdır:
-
-- `id`
-- `business_id`
-- `conversation_id` (varsa)
-- `lead_id` (varsa)
-- `event_type`
-- `created_at`
-
-Kısıtlar:
-
-- `event_type` yalnızca tanımlı değerler olmalı
-- aynı olay birden fazla kez tekrar edilirse dedupe kuralları uygulanmalı
-- gereksiz olaylar, “sadece mesaj geldi” gibi tek başına anlamsız girişler değildir; ana işlemler kaydedilmeli
-
-### 3.4. `audit_log` ile sistem yazılım olayları
-
-`audit_log` daha geniş ve daha teknik olayları tutar. Bu olaylar şunları kapsamalıdır:
+`audit_log` daha geniş ve teknik olayları tutar. Örnek event type'lar:
 
 - `lead_scored`
 - `lead_qualified`
@@ -259,13 +218,17 @@ Kısıtlar:
 - `business_config_loaded`
 - `system_error`
 
-`payload` JSON içindeki alanlar şunları taşımalı:
+`payload` alanları olaya göre seçilir; aşağıdakilerin tümü her olayda zorunlu değildir.
+Örneğin randevu oluşmadan `appointment_id`, lead oluşmadan `lead_id` bilinmez.
+Kimlik veya hata ayrıntısı uydurulmaz; ham müşteri metni/secret eklenmez.
+`business_id` zaten tablo sütunudur; payload'da tekrar etmek zorunlu değildir.
+Olası bağlam alanları:
 
+- `business_id`
 - `message_id`
 - `conversation_id`
 - `lead_id`
 - `appointment_id`
-- `business_id`
 - `reason`
 - `score`
 - `model`
@@ -274,26 +237,23 @@ Kısıtlar:
 - `actor`
 - `channel`
 
-### 3.5. Takip gereksinimleri
+### 2.4. Takip gereken temel akış
 
-#### Akış takibi
+Bir konuşma için izlenmesi gereken akış:
 
-Bir konuşma için sistemin güvenli bir şekilde izlemesi gereken temel akış şöyledir:
+1. Mesaj alınır
+2. `messages` tablosuna yazılır
+3. `conversations` bağlamı bulunur
+4. `lead qualification` çalıştırılır
+5. `qualification_score` ve `status` belirlenir
+6. uygun `audit_log` / `funnel_events` kaydı yazılır
+7. gerekli ise `escalations` açılır
+8. `appointments` süreci başlar
+9. sonuç kaydedilir
 
-1. initial message received
-2. conversation created / found
-3. lead detection
-4. score assigned
-5. qualification decision
-6. if appointment needed, booking process starts
-7. if escalation triggered, human assigned
-8. final status recorded
+### 2.5. Performans takibi
 
-Her adım, `audit_log` veya `funnel_events` içinde izlenebilir olmalıdır.
-
-#### Performans takibi
-
-Ayrıca şu metrikler izlenebilir olmalıdır:
+Aşağıdaki metrikler izlenebilir olmalıdır:
 
 - DM başlatma sayısı
 - nitelikli lead sayısı
@@ -305,159 +265,120 @@ Ayrıca şu metrikler izlenebilir olmalıdır:
 - randevu dönüşüm oranı
 - müşteri dönüşüm oranı
 
-### 3.6. KPI ve funnel takibi
+### 2.6. KPI ve funnel takibi
 
-Proje tasarımında hedef funnel açıkça şöyle:
+Hedef funnel şudur:
 
 Reel/Reklam -> DM -> Nitelikli lead -> Randevu -> Müşteri
 
 Bu nedenle her aşamada bir olay tanımlanmalıdır:
 
-- `reel_view` reklam/izlenme tarafı
-- `dm_started` iletişim başlatıldı
-- `lead_qualified` ilk sıcak lead
-- `appointment_booked` randevu oluştu
-- `customer_converted` müşteri oldu
+- `reel_view`
+- `dm_started`
+- `lead_qualified`
+- `appointment_booked`
+- `customer_converted`
 
-Bu olaylar, aynı zamanda analiz ve raporlama için de kullanılabilir. Hangi olayın hangi aşamada oluştuğu, KPI'ların doğru hesaplanması için önemlidir.
+### 2.7. Raporlama gereksinimleri
 
-### 3.7. Raporlama gereksinimleri
+Aşağıdaki raporlar alınabilir olmalıdır:
 
-Aşağıdaki raporlar gerekli ve kullanılabilir olmalıdır:
-
-#### 7.1. Funnel raporu
-
+#### Funnel raporu
 - toplam DM sayısı
 - nitelikli lead sayısı
 - randevu talebi sayısı
 - onaylanan randevu sayısı
 - müşteri dönüşüm sayısı
-- her aşamadaki kayıp oranı
+- her aşamadaki kayıp oranı ancak aynı kohort, gözlem penceresi ve tekilleştirme tanımlandığında; bağımsız olay sayıları birbirine bölünmez
 
-#### 7.2. Lead quality report
+#### Lead quality report
+- her lead için skor dağılımı
+- en yüksek ve en düşük skorlar
+- lead olma nedenleri
+- hangi kanal / içerik tipi daha çok lead verdi
 
-- her lead için score dağılımı
-- en yüksek / en düşük skorlar
-- hangi metin kalıpları lead olarak işaretlendi
-- hangi içerik / kanal daha çok lead verdi
-
-#### 7.3. İnsan devri raporu
-
+#### İnsan devri raporu
 - toplam escalation sayısı
 - hangi nedenden dolayı devredildi
 - devri kimin çözdüğü
 - çözüm süresi
-- randevu oluşturulan devrim sayısı
+- randevu oluşturulan devir sayısı; ilişkilendirilmiş kayıt yoksa hesaplanamaz
 
-#### 7.4. Denetim / audit report
-
+#### Denetim / audit report
 - hangi karar ne zaman alındı
 - hangi olay neden oluştu
-- sistemin hangi model veya hangi düzenlemeden geçtiği
+- hangi model / hangi davranış düzeni kullanıldı
 
-### 3.8. Analiz için gerekli verinin yapısı
+### 2.8. Veri gizliliği ve güvenlik
 
-Analysis engine, aşağıdaki alanlara bakmalıdır:
-
-- `conversation_id`
-- `business_id`
-- `channel` (whatsapp / instagram)
-- `message timestamp`
-- `lead_id`
-- `appointment_id`
-- `event_type`
-- `score`
-- `reason`
-- `response_time_ms` (gerekirse)
-
-Bu alanlar, daha sonra KPI hesaplaması için kullanılabilir.
-
-### 3.9. Analiz ve güvenlik
-
-- Kullanıcı kimlikleri ve müşteri verileri sadece bu iş için kayıt altına alınmalı
-- `audit_log`lardan yalnızca ilgili yetkili insanlar içeriği görmeli
-- `PII` ve hassas müşteri detayları sıklıkla doğrudan metin olarak yazılmamalı; sadece sanal/özet/işaretli bilgiler tutulmalı
+- veri sadece ilgili işletme kapsamı içinde görünmelidir
+- müşteri kişisel verileri doğrudan rapor veya log olarak yazılmamalıdır
+- `messages.content` ve `customer_identifier` için maskelenmiş, özetlenmiş veya sanal versiyon kullanılmalıdır
 
 ---
 
-## 4) Maliyet kontrolü (Cost control and model routing) gereksinimleri
+## 3) Maliyet kontrolü ve model routing gereksinimleri
 
-### 4.1. Neden önemlidir?
+### 3.1. Neden önemlidir?
 
-Sistem, her mesaj için en güçlü modeli seçmek yerine, her durumda en uygun modeli seçmelidir. Bu hem maliyet hem de hız açısından kritik öneme sahiptir.
+Sistem, her mesaj için en güçlü modeli seçmek yerine, doğru durumda doğru modeli seçmelidir. Bu hem maliyet hem de hız açısından kritiktir.
 
-Projede model routing mantığı zaten planlanmıştır. `model_routing_log` tablosu bunun için öngörülmüştür. Bu tablo, hangi provider/model kullanıldığını, ne kadar maliyet oluştuğunu ve gecikmeyi kaydeder.
+`model_routing_log` tablosu bunun için kullanılmalıdır.
 
-### 4.2. Model routing kararının amacı
-
-Aşağıdaki üç maddede tek hedef vardır:
+### 3.2. Model routing kararının amacı
 
 - basit, rutin ve düşük riskli mesajlar için ucuz ve hızlı modeli kullanmak
-- karmaşık, hassas, niyetli veya kritik mesajlar için daha güçlü modeli kullanmak
+- karmaşık / kritik / insan müdahalesi gereken mesajlar için daha güçlü modeli kullanmak
 - maliyet ve kalite dengesi kurmak
 
-### 4.3. Model routing için veri kaynakları
+### 3.3. Model routing için veri kaynakları
 
 Aşağıdaki bilgiler karar için gereklidir:
 
 - mesajın uzunluğu
-- mesajın karmaşıklığı (basit mi, çoklu amaçlı mı?)
+- karmaşıklık seviyesi
 - lead qualification sonucu
 - randevu talebinin ciddiyeti
-- müşteri davranışının risk düzeyi
-- mevcut konuşma bağlamı
-- geçmiş mesajların toplam uzunluğu
+- müşteri risk seviyesi
+- konuşma bağlamı
+- önceki mesajların toplam uzunluğu
 
-### 4.4. Hangi durumlarda hangi model?
+### 3.4. Hangi durumlarda hangi model?
 
-İlk düşünülmüş başlangıç kuralları şunlardır:
-
-#### 1. Basit, kısa ve rutin mesajlar
-
+#### Basit, kısa ve rutin mesajlar
 Örnekler:
-
 - merhaba
-- fiyat sorusu (tek başına)
-- çalışma saatleri sorusu
+- fiyat sorusu tek başına
+- çalışma saatleri
 - adres sorusu
-- “hangi hizmetler var?”
 
 Bu durumda:
+- hızlı ve düşük maliyetli model tercih edilir
 
-- ucuz / hızlı model (ör. haiku benzeri) kullanılabilir
-- response_time kısa olmalı
-- maliyet düşük olmalı
-
-#### 2. Orta karmaşıklık ve müşteriyle işlem niyeti taşıyan mesajlar
-
+#### Orta karmaşıklık / iş niyeti taşıyan mesajlar
 Örnekler:
-
 - hizmet ve fiyat birlikte soruluyor
-- uygun randevu uygunluğu tartışılıyor
-- müşteri hem fiyat hem tarih soruyor
+- uygun randevu tartışılıyor
 - müşteri endişesini anlatıyor
 
 Bu durumda:
+- orta seviye model uygun olabilir
 
-- orta seviye model / güçlü ama maliyet açısından dengeli seçim
-- kullanımdan önce `lead qualification` durumu kontrol edilmeli
+Bu bir kalite gereksinimi örneğidir; mevcut routing kodunda ayrı üçüncü bir
+“orta model” seçeneği uygulanmış değildir. Rapor kayıtlı provider/model adlarını
+aynen gruplar; olmayan bir model katmanı veya fiyat tarifesi türetmez.
 
-#### 3. Yüksek risk / kritik / özel karar gerektiren mesajlar
-
+#### Yüksek risk / kritik karar gerektiren mesajlar
 Örnekler:
-
-- müşteri itiraz ediyor
-- fiyat indirim talep ediyor
-- randevu için çok özel bir istek var
-- konuşma çelişkili, güvenli karar vermek için insan müdahalesi gerekli
-- system triggers escalation
+- agresif şikâyet
+- özel fiyat / özel paket isteniyor
+- konuşma çelişkili
+- insan müdahalesi gerektiği belirlenmiş
 
 Bu durumda:
+- güçlü model kullanılabilir; ancak güvenlik için insan müdahalesi daha güvenli bir seçenek olabilir
 
-- güçlü model ancak insan müdahalesi yaklaşımı daha güvenli olabilir
-- model seçimi ne olursa olsun, her adım `audit_log` ile izlenmeli
-
-### 4.5. `model_routing_log` tablosunun rolü
+### 3.5. `model_routing_log` rolü
 
 `model_routing_log` tablosunda şunlar tutulmalıdır:
 
@@ -470,211 +391,215 @@ Bu durumda:
 - `latency_ms`
 - `created_at`
 
-Bu sayede bir mesajın hangi modelle işlendiği kesin olarak görülebilir. `message_id` bağlantısı ile ilgili mesajın bulunduğu konuşma ve lead ile birleştirilebilir.
+Bu sayede hangi modelin kullanıldığı ve maliyet / gecikme bilgisi açıkça izlenebilir.
 
-### 4.6. Cost control için temel gereksinimler
-
-#### 6.1. Başlangıç eşikleri
-
-Maliyet kontrolü şu eşiklere dayanmalıdır:
+### 3.6. Maliyet kontrolü için temel kurallar
 
 - kısa ve basit mesajlarda düşük maliyetli model
-- yüksek niyet / yüksek önemli mesajlarda güçlü model
-- aynı konuşma içindeki tekrar eden mesajlar için tekrar tekrar maliyet oluşmamalı
+- yüksek niyet / yüksek risk mesajlarında güçlü model
+- aynı konuşma içindeki tekrar eden işlemler için birden fazla gereksiz model çağrısı yapılmamalı
+- model seçimi sadece maliyet değil, güvenlik ve kalite için olmalı
 
-#### 6.2. Bing hyper-optimization değil, mantıklı kısıt
-
-Maliyet kontrolü şunu yapmamalıdır:
-
-- tek bir modelin her durumda kullanılmasına zorlamak
-- çok basit mesajlarda güçlü model kullanmak
-- çok kısa bir içeriği benzerleştirerek gereksiz maliyet çıkarmak
-
-Doğru yaklaşım şudur:
-
-- “öğrenme ve maliyet kontrolü” üzerinden model seçimi
-- buna göre route etme
-
-### 4.7. Maliyet kontrolü işlemi
-
-Aşağıdaki akış uygulanmalı:
+### 3.7. Maliyet kontrolü akışı
 
 1. Mesaj alınır
-2. Mesaj kısa mı, karmaşık mı, kritik mi kontrol edilir
-3. Lead qualification sonucu ve risk seviyesi hesaplanır
+2. Mesajın kısa / karmaşık / kritik olduğuna karar verilir
+3. Lead qualification sonucu ve risk seviyesi değerlendirilir
 4. Uygun model seçilir
-5. `model_routing_log` içinde kayıt oluşturulur
-6. Çözüm üretim sonrası maliyet ve gecikme not edilir
-7. gerektiğinde düzenli rapor oluşturulur
+5. Seçim kararı `audit_log.model_routed` ile izlenebilir; karar vermek henüz ücretli çağrı yapmak değildir
+6. Gerçek sağlayıcı denemesi sonuçlandığında bilinen maliyet/gecikme `model_routing_log` içinde izlenir; bilinmeyen maliyet sıfır sayılmaz (mevcut uygulama açıkları bölüm 7.4'te)
+7. gerektiğinde raporlanır
 
-### 4.8. Model seçimi için kurallar
-
-Bahsi geçen model routing, kod ile şu şekilde davranmalıdır:
-
-- `simple` / `routine` / `faq` mesajlarda düşük maliyetli model
-- `middle` / `transactional` mesajlarda ortalama model
-- `complex` / `lead` / `escalation` / `complaint` mesajlarda daha güçlü model
-- maliyeti aşırı yükselten işlemler için ekstra kontrol ve batch optimize edilebilir
-
-### 4.9. Maliyet ve kalite takibi için raporlama
+### 3.8. Maliyet ve kalite raporları
 
 Aşağıdaki raporlar gerekli olmalıdır:
 
-#### 9.1. Model maliyet raporu
-
-- toplam maliyet
+- kaydedilmiş bilinen maliyet, eksik ölçüm sayısı ve kapsam sınırlaması; fatura toplamı olduğu iddia edilmez
 - model bazlı maliyet dağılımı
-- en pahalı model hangisi
-- hangi tür mesajlar en çok para harcatıyor
+- ortalama latency
+- model bazlı hata / retry / reject oranı ancak model ve deneme sonuçları ilişkilendirilebiliyorsa; mevcut routing sütunları yeterli değildir
+- başarılı lead başına maliyet ancak maliyet kapsamı, başarı tanımı ve aynı kohort belirlenmişse; sıfır payda için oran tanımsızdır
 
-#### 9.2. Cevap kalitesi ve hız raporu
+### 3.9. Riskler ve korunma
 
-- model bazlı ortalama latency
-- model bazlı hata / retry / reject oranı
-- çözüm için geçen süre
+Aşağıda önemli riskler vardır:
 
-#### 9.3. Lead / model korelasyonu
-
-- hangi model daha çok lead üretmiş
-- hangi model daha çok randevu veya müşteri dönüşümü sağlamış
-- maliyet başına başarılı lead oranı
-
-### 4.10. Maliyet kontrolü mantığı ile ilgili kritik kurallar
-
-- Model route işlemi yalnızca maliyet değil, kalite ve güvenlik için yapılmalıdır.
-- En pahalı model her durumda en iyi cevap garantisi vermemelidir.
-- Basit mesajlarda güçlü model kullanmak, gereksiz maliyeti artırır.
-- Her model seçiminde `model_routing_log` yazılmalıdır.
-- `provider` ve `model` alanları her zaman net olmalıdır.
-
-### 4.11. Maliyet kontrolünde riskler
-
-Aşağıdaki durumlar özellikle kontrol edilmelidir:
-
-- aynı mesaj birden fazla kez model seçimi için tekrar tekrar işlenmesin
+- aynı teslimat gereksiz tekrar çağrı üretmesin; yetkili teknik retry ayrı bir gerçek denemedir ve maliyeti gizlenmez
 - çok kısa / gereksiz mesajlar için aşırı model çağrısı yapılmasın
-- lead alımı ve randevu işlemleri için model riskleri aşırı basit hale getirilmesin
-- model seçimi sırasında `business_id` ve `conversation_id` kaybı olmasın
+- `business_id` ve `conversation_id` kaybı yaşanmasın
+- `audit_log` ve `model_routing_log` bütün kararları net şekilde göstersin
 
 ---
 
-## 5) Bütün bu alanların bir arada çalışacağı veri akışı
+## 4) Senaryo bazlı boşluklar ve çözüm notları
 
-Bu üç sistemin birlikte nasıl işlediğini tanımlayan ortak akış şöyle olmalıdır:
+### 4.1. Ayşe'nin onayı gecikirse
 
-1. Gelen mesaj alınır.
-2. `messages` tablosuna kaydedilir.
-3. `conversations` bağlamı bulunur.
-4. `lead qualification` çalıştırılır.
-5. `qualification_score` ve `status` set edilir.
-6. `funnel_events` ve `audit_log` içine uygun olaylar düşer.
-7. Eğer insan müdahalesi gerekiyorsa `escalations` oluşturulur.
-8. Model routing, mesajın karmaşıklığına göre uygun provider/model seçer.
-9. `model_routing_log` yazılır.
-10. Eğer uygunluk ve niyet ciddi ise `appointments` akışı başlar.
-11. Tüm bu adımlar `audit_log` ve `funnel_events` ile izlenir.
-12. Son sonuçlar raporlanır.
+- review task `pending approval` listesinde kalır
+- belirli bir SLA aşımında ikinci bir onaycı seçilebilir
+- otomatik yayın yapılmaz
+- eğer insan tekrar geri dönmezse `conversations.status` `escalated` olarak kalır
 
-Bu akış, tek tek görevler olarak butonlanabilir; ancak bütün sistemin aynı anda izlenmesi gereklidir.
+### 4.2. Aynı anda iki içerik onay beklerse
 
----
+- her öğe ayrı `approvals` kaydı olarak işlenir
+- öncelik şu sıralamaya göre verilebilir: aciliyet, zaman, iş hedefi, müşteri değeri
+- aynı anda birden fazla review ekranı açık olabilir; fakat her cevap ayrı olarak izlenir
 
-## 6) Yalın başlangıç örneği
+### 4.3. İnsan aktarım gerekirken kimse cevap vermezse
 
-Bu iş akışı için en pratik ilk uygulama, aşağıdaki şekilde minimum ama yeterli bir başlangıç olabilir:
+- escalation `open` veya `in_progress` olarak kalır
+- sistem otomatik olarak lead veya randevu oluşturmaz
+- görev listesi / bekleme kuyruğu olarak kalır
+- bu durum bir hata değil, insan iş yükü olarak izlenir
 
-### 6.1. İnsan devri kuralları
+### 4.4. `funnel_events` içinde beklenmeyen event türü düşerse
 
-- lead_score < 40 ise otomatik değil, sadece bilgi verme olarak işlem görsün
-- lead_score 40-69 arasında ise ek soru gerekirse insan devri
-- lead_score >= 70 ise randevu akışına yönlendir
-- müşteri şikâyeti veya agresif mesaj varsa insan devri
+- bu olay `audit_log` içinde kaydedilir
+- `funnel_events` listesi değişmez; gereksiz event engellenir
 
-### 6.2. Funnel kuralları
+### 4.5. İki işlemin aynı anda çakışması
 
-- her sohbet için `dm_started` event
-açık konuşma
-- lead qualified ise `lead_qualified`
-- randevu varsa `appointment_booked`
-- müşteri olduysa `customer_converted`
-
-### 6.3. Model routing
-
-- kısa mesajlar -> hızlı model
-- niyetli/karmaşık mesajlar -> güçlü model
-- escalation sırasında insan eşliğinde model geçişi sağlayan karar
-
-### 6.4. Maliyet kuralı
-
-- modele göre `cost_usd` ve `latency_ms` kaydedilsin
-- her 30 veya 60 dakikada maliyet raporu çıkarılsın
-- gereksiz tekrar model çağrısı önlensin
+- örneğin aynı lead için iki randevu oluşturulmaya çalışılırsa
+- sistem aynı `lead_id` ve `business_id` için çakışma kontrolü yapmalıdır
+- çakışma `audit_log` içinde `appointment_conflict_detected` olarak işlenir
 
 ---
 
-## 7) Hata ve güvenlik senaryoları
+## 5) Bütün alanların birlikte çalışacağı veri akışı
 
-### 7.1. İnsan devri yanlış tetiklenirse
+1. Gelen mesaj alınır
+2. `messages` tablosuna kaydedilir
+3. `conversations` bağlamı bulunur
+4. `lead qualification` çalıştırılır
+5. `audit_log` ve `funnel_events` için uygun olaylar yazılır
+6. Risk / belirsizlik / şikâyet varsa `escalations` açılır
+7. Model routing kararı verilir; gerçek çağrı sonuçlandığında bilinen ölçümler `model_routing_log` üzerinden izlenir (7.4'teki uygulama sınırlamaları geçerlidir)
+8. Randevu gerekiyorsa `appointments` akışı başlar
+9. İnsan onayı gerekiyorsa `approvals` işlemi başlatılır
+10. Son sonuçlar raporlanır
 
-Bazı konuşmalar gereksiz yere Ayşe'ye giderse:
-
-- `escalations` sayısı artar
-- insan yükü yükselir
-- operasyonel maliyet artar
-
-Bu durumda, escalation koşullarının eşikleri yeniden incelenmeli ve `lead qualification` skorları ayarlanmalı.
-
-### 7.2. Maliyet kontrolü yanlış model seçerse
-
-En pahalı veya en zayıf model seçilirse:
-
-- gereksiz para harcanır
-- hızlı dönüşüm bozulabilir
-- operasyonel verim düşer
-
-Bu durumda route rules tekrar güncellenmeli ve `model_routing_log` üzerinden analiz yapılmalı.
-
-### 7.3. Analiz takibi eksikse
-
-Eğer `audit_log` veya `funnel_events` tam dolmazsa:
-
-- hangi karar neden verildiğini izlemek imkânsız hale gelir
-- randevu ve lead başarısı ölçülemez
-- soru cevap ve hata ayıklama zorluk çıkar
-
-Bu tablolara veri düşürmek, sistemin güvenlik ve operasyonel sürdürülebilirliği için bir zorunluluktur.
+Bu akış, tek tek görevler gibi değil, aynı anda izlenebilen bir operasyonel döngü olarak düşünülmelidir.
 
 ---
 
-## 8) Kodlamaya geçmeden önce netleşmesi gerekenler
+## 6) Kısa özet
 
-Bu üç alanı uygulamaya geçmeden önce aşağıdakiler açık ve sabit olmalıdır:
+Bu üç alan birlikte değerlendirildiğinde sistem şöyle işler:
 
-1. `escalations` hangi koşullarda açılacak?
-2. `audit_log` event type listesi sabitlenecek mi?
-3. `funnel_events` hangi event türleri ile sınırlandırılacak?
-4. `lead qualification` sonucu ile route kararları nasıl eşleşecek?
-5. `model_routing_log` hangi frequency ile doldurulacak?
-6. `business_id` bazlı izleme ve raporlama kimler tarafından görülecek?
-7. insan devri için öncelik listesi ve atama kuralı netleşecek mi?
-8. `same conversation` tekrar eden mesajların dedupe kuralı olacak mı?
-
-Bu maddeler netleşince, sistem hem güvenli hem izlenebilir hem de maliyet açısından kontrollü hale gelir.
-
----
-
-## 9) Kısa özet
-
-Bu üç alan bir arada düşünüldüğünde, sistem şöyle işler:
-
-- müşteriler farklı niyet seviyeleriyle gelir
+- müşteriler farklı niyet ve risk seviyeleriyle gelir
 - sistem onları sınıflandırır
-- iyi leadler randevu akışına girer
+- güçlü leadler randevu akışına yönlendirilir
 - belirsizlik veya risk varsa insan devri açılır
 - her olay izlenir
 - model seçimi maliyet ve kalite dengesiyle yapılır
 - her karar kayıt altına alınır
 
-Bu sayede sistem sadece "mesaj alıp cevap veriyor" değil; gerçekten iş akışını yönetebilen, izlenebilir ve güvenli bir otomasyon haline gelir.
+Bu belge, mevcut veritabanı yapısı ve proje kurallarıyla tutarlı şekilde insan devri, analiz/takip ve maliyet kontrolünü tanımlar. Kodlama öncesinde bu kuralların net ve uygulanabilir olması gerekir; aksi halde kararların neden alındığını izlemek ve hata ayıklamak mümkün olmaz.
 
-Bu gereksinim dokümanı, insan devri, analiz/takip ve maliyet kontrolü için gerekli iş mantığını netleştirir. Kodlama öncesinde bu kuralların uygulanabilir ve belgelenmiş olması gerekir; aksi halde sistemin neden bir karar verdiğini izlemek, bir hatayı düzeltmek ve maliyeti kontrol etmek mümkün olmaz.
+---
+
+## 7) Analiz ve maliyet incelemesi — 22 Eylül 2026
+
+Bu bölüm analiz/maliyet için önceki genel ifadeleri netleştirir. Olaylar aşağıda
+**hedef kabul sözleşmesi** olarak tanımlanmıştır; bugün hepsinin üretildiği
+iddia edilmez. Canlı olay yazımı, kalıcı tekilleştirme, atomik kayıt, tenant
+sınırları ve bütçe nedeniyle otomatik işlem durdurma tasarımı AGENTS.md gereği
+Claude tarafından ele alınmalıdır. Bu çalışmada yalnız belge, sentetik
+senaryolar ve çevrimdışı rapor değişmiştir; şema/webhook değişmemiştir.
+
+### 7.1. Bulunan açıklar ve düzeltmeler
+
+| No | Bulgu | Netleştirme |
+|---|---|---|
+| A01 | Olay, müşteri ve mesaj sayısı birbirine karışıyor | Bir konuşmada on mesaj bir `dm_started` olayıdır. Rapordaki kayıt sayısı benzersiz müşteri değildir. |
+| A02 | Reklamdan gelen DM otomatik görüntülenme sayılıyor olabilir | `reel_view` yalnız doğrulanmış kaynak olayıyla; DM'den görüntülenme veya kampanya atfı türetilmez. Toplu 100 görüntülenme tek müşteri olayı değildir. |
+| A03 | Lead skoru değişimi qualification ile eş tutuluyor | Her skor değişimi audit; ilk doğrulanmış qualification geçişi funnel. Aynı qualified durumda yeni mesaj yeni qualification değildir. Eşik tanımı lead belgesindeki açık karardır. |
+| A04 | Talep, pending teklif, onay aynı randevu metriği | Talep audit; başarılı kesinleşme audit + `appointment_booked`. Teklif veya müşterinin bağlamsız “tamam” mesajı booking değildir. |
+| A05 | İptal/ertelemenin geçmiş funnel sayısını silmesi belirsiz | Başarılı iptal/erteleme audit olaylarıdır; geçmiş booking silinmez. Güncel aktif randevu, booked eksi cancelled hesabıyla bulunmaz. |
+| A06 | “Müşteri geldi” satış/dönüşüm kabul ediliyor | Geldi bilgisi `customer_arrived` audit; hizmet tamamlanması `appointment_completed` audit. `customer_converted` yalnız işletmenin ayrıca doğrulanmış dönüşüm tanımına göre. Tanım yoksa rapor dönüşüm varsaymaz. |
+| A07 | Tekrar teslimat, retry ve yeni talep aynı sayılabilir | Aynı olay yeniden teslim edildiğinde yeni iş olayı yok; gerçekten yeni randevu veya ücretli retry ayrı olaydır. Aynı metin güvenilir tekilleştirme anahtarı değildir. |
+| A08 | Zaman ve geç gelen olaylar tanımsız | Rapor `[from,to)` ve verilen saat dilimiyle çalışır. Şemadaki `created_at` kayıt zamanıdır; olay gerçekleşme zamanı/geç yükleme kaynak bilgisi ayrı izlenmeli. Bu rapor olay zamanını yeniden kurmaz. |
+| A09 | Dönüşüm/kayıp oranlarının paydası belirsiz | Aynı kohort, gözlem süresi, tekil varlıklar ve atıf olmadan oran yok. Geç dönem randevusu DM sayısından büyük olabilir; bunu negatif kayıp diye sunma. |
+| A10 | Eksik tablo ile ölçülmüş sıfır ayrılmıyor | Verilmeyen tablo `not_supplied`; boş dışa aktarım `no_rows`. Olay yazımı yoksa boş kayıt sağlıklı sıfır trafik kanıtı değildir. |
+| A11 | Routing log bütün maliyeti/hataları kapsıyor sanılıyor | Mevcut başarılı ana çağrı kayıtları kısmi ölçümdür; özet, başarısız çağrı, log hatası ve cache kullanımı ayrıntıları eksiktir. |
+| A12 | Karar ve sağlayıcı denemesi birbiri yerine yazılıyor | `model_routed` kararı; `model_call_failed/retried/rejected` operasyonel audit; gerçek denemenin ölçümü routing. Audit maliyeti routing maliyetine yeniden ekleme. |
+| A13 | Null/0, para birimi ve fiyat sürümü belirsiz | Null bilinmiyor, 0 ölçülmüş sıfırdır. `cost_usd` USD tahminidir; TL ile toplanmaz, canlı tarife çekilmez. Tarife güncellemesi geçmiş ölçümü sessizce yeniden fiyatlamamalı. |
+| A14 | Maliyet artışı eşiği ve bütçe zamanı yok | Rapor bütçesi açıkça seçilen rapor aralığına aittir; günlük/aylık limit diye kendiliğinden yorumlanmaz. Eşik ve limit ayar olarak verilir, işletme değeri koda gömülmez. |
+| A15 | Uyarı otomatik durdurma/ucuz modele geçiş gibi okunabilir | Rapor yalnız tespit eder; iş durdurmaz, model değiştirmez veya olay yazmaz. Eksik maliyette “bütçe güvenli” sonucu vermez. Kritik kalite maliyet uğruna düşürülmez. |
+| A16 | Çözülen devir sayısı ve SLA anlık snapshot'tan çıkarılıyor | Güncel status ile çözülme olayı farklıdır. `resolved_at`/durum geçmişi olmadan çözüm süresi veya geçmiş iş yükü hesaplanmaz. |
+| A17 | Her audit için tüm kimlikler/hata metni zorunlu | Olaya göre asgari bağlam; kimlik yoksa uydurma yok. Teknik hatalarda ham gövde, müşteri verisi, secret veya sağlayıcı hata metni rapora taşınmaz. |
+| A18 | Ana işlem başarılı, log başarısız olduğunda tekrar işleme belirsiz | Log kaybı işi yeniden yürütme gerekçesi değildir. Yazım/onarım ve atomik garantiler Claude tasarımına bırakılır; rapor eksik veriyi tamamlanmış saymaz. |
+| A19 | Aynı tür audit ve funnel birlikte iki dönüşüm sayılabilir | `lead_qualified` audit + funnel aynı geçişin iki görünümüdür; sayıları toplanmaz. `appointment_confirmed` ile booked için de aynı kural. |
+| A20 | Başarılı API yanıtı başarılı müşteri iletişimi sayılıyor | Taslak üretimi, kaydı, mesaj gönderimi, teslimi, okunması farklıdır. Ücretli çağrı başarıyla dönse bile müşteriye ulaşmamış olabilir. |
+
+### 7.2. Olayların kayıt anı
+
+Bu tablo yeni DB enum alanı eklemez. Audit türleri serbest metinli mevcut
+`audit_log` için hedef isimlerdir. İlgili durum değişmeden başarı olayı yazılmaz.
+Tekrar gelen aynı geçiş ikinci kez sayılmaz. Teknik tekilleştirme yöntemi bu
+belgede uygulanmış kabul edilmez.
+
+| Olay / örnek | Ne zaman | Kayıt yeri / tür | Ne zaman yazılmaz? |
+|---|---|---|---|
+| Reklam görüntülenmesi | Yetkili kaynaktan tekil görüntüleme kanıtı gelince | funnel `reel_view` | Yalnız DM veya doğrulanmamış reklam iddiası |
+| İlk müşteri mesajı | Yeni konuşmanın ilk geçerli inbound mesajı kalıcı kaydedilince | funnel `dm_started` | Read receipt, outbound, aynı konuşmada devam mesajı, kayıt hatası |
+| Skor değişimi | Yeni skor değerlendirmesi kalıcı uygulanınca | audit `lead_scored` | Aynı teslimatın tekrarı |
+| Lead olma | Doğrulanmış qualification geçişi uygulanınca | audit ve funnel `lead_qualified` | Yalnız fiyat sorusu veya zaten qualified durum |
+| Lead uygun değil | Disqualification kararı uygulanınca | audit `lead_disqualified` | Salt düşük skor veya merak nedeniyle |
+| Randevu talebi | Anlaşılabilir yeni talep alınca | audit `appointment_requested` | Yalnız fiyat/saat bilgisi veya teklif onayı sanılan belirsiz mesaj |
+| Randevu kesinleşmesi | Müşteri onayı, uygunluk ve kalıcı confirmed kayıt başarılıysa | audit `appointment_confirmed`, funnel `appointment_booked` | Pending, çakışma, timeout sonucu belirsizliği |
+| Çakışma | Uygunluk denetimi çakışma saptayınca | audit `appointment_conflict_detected` | Sırf aynı gün diye |
+| İptal | Mevcut randevu cancelled durumuna başarılı geçince | audit `appointment_cancelled` | “İptal koşulları nedir?”, iptal hatası, zaten cancelled |
+| Erteleme | Doğrulanmış yeni tarih/saat değişimi başarıyla uygulanınca | audit `appointment_rescheduled` | Yeni saat dolu; eski randevu kendiliğinden iptal edilmez |
+| Müşteri geldi | Yetkili operasyon kaynağı gelişi doğrulayınca | audit `customer_arrived` | Randevu saati geçti diye veya yalnız “geliyorum” mesajında |
+| Hizmet tamamlandı | Operasyon tarafından tamamlanma doğrulanınca | audit `appointment_completed` | Yalnız zaman geçti diye |
+| Gelmedi | Operasyon ve işletme politikası gelmemeyi doğrulayınca | audit `appointment_no_show` | Şemada no_show appointment status yok; böyle bir status yazılmaz |
+| Müşteriye dönüştü | İşletmenin onaylanmış dönüşüm tanımı ilk kez sağlanınca | funnel `customer_converted` | Geliş, booking veya ödeme iddiasından tek başına türetme |
+| İnsan devri | Açık devir kaydı başarıyla yaratılınca / çözüm doğrulanınca | audit `escalation_created` / `escalation_resolved` | Aynı açık işin tekrar bildirimi; hâlâ takip gerekirken resolved |
+| Model seçildi | Yönlendirme kararı verilince | audit `model_routed` | Bu karar kendi başına routing maliyet satırı değildir |
+| Deneme sonuçlandı | Gerçek çağrı ölçümü elde edilince | `model_routing_log` | Çağrı yapılmadıysa sahte ücretsiz satır yazma |
+| Hata, yeniden deneme, ret | İlgili teknik sonuç/gerçek retry/ret gerçekleşince | audit `model_call_failed`, `model_call_retried`, `model_call_rejected` | Teknik retryyi yeni müşteri veya yeni booking sayma |
+| Maliyet yükseldi | Karşılaştırılabilir dönem/kapsam ve tanımlı artış eşiği aşımı doğrulanınca | audit `cost_increase_detected` | Önceki dönem eksik/0 ve yöntem tanımsızken artış yüzdesi uydurma |
+| Bütçe uyarısı / aşımı | Aynı bütçe döneminde eşik ilk geçildiğinde | audit `cost_budget_warning` / `cost_budget_exceeded` | Her rapor yenilemede aynı eşik olayını yeniden yazma |
+| Kayıt veya yanıt hatası | İlgili hata gözlenince | audit `telemetry_write_failed`, `reply_store_failed`, `reply_delivery_failed` veya `system_error` | Hata var diye booking/conversion başarı olayı yazma |
+
+Yeniden qualified olma, konuşmayı yeniden açma, kanallar arası eşleme ve
+tekrar gelen müşterinin dönüşümü için tekil varlık/dönem politikası ayrıca
+kararlaştırılmalı. Bunlar raporda otomatik birleştirilmez veya müşteri sayılmaz.
+
+### 7.3. Rapor ve maliyet değerlendirmesi
+
+- Olay sayıları audit/funnel kaynakları ayrı tutularak sunulur. İptal/erteleme,
+  geliş/tamamlama, model hata/retry/ret ve maliyet uyarıları operasyon özetinde
+  görünür. Log türü serbesttir; tanınmayan audit türü kaybolmaz, ayrı listelenir.
+- Model bazında kayıt payı, bilinen maliyet, eksik ölçüm ve gecikme raporlanır.
+  Model çağrı başarısı/kalitesi mevcut sütunlardan hesaplanamaz.
+- Günlük dağılım seçilen IANA saat diliminde kayıt zamanına göre gruplanır.
+  Kayıtsız günler otomatik sıfır gün diye doldurulmaz. UTC varsayılanı açıkça
+  yazılır; DST/ay sonu yerel gün sınırları test edilir.
+- Bütçe pozitif USD değeri; uyarı yüzdesi 0'dan büyük ve 100'den küçük olmalı.
+  Eşiğe eşitlik uyarıdır; limite eşitlik limit doldu, üstü aşım demektir.
+  Eksik kayıt/ölçüm gerçek harcamayı artırabilir; limit altında bilinen toplam
+  “güvenli” veya “kalan kullanılabilir kredi” olarak sunulmaz.
+- Bütçeye göre yerel rapor sonucu bir **hesaplama**dır; mevcut `cost_*` audit
+  kayıtları geçmiş **olay sayıları**dır. Rapor çalıştırmak yeni olay yazmaz.
+- Negatif/bozuk maliyet, geçersiz tarih, bilinmeyen funnel türü ve yanlış
+  alanlar açık hata üretir. Null/eksik ölçüm desteklenir. Eksik export, atlanmış
+  sayfa, duplicate ve log kaybı kimliksiz projeksiyondan otomatik onarılamaz.
+
+### 7.4. Mevcut uygulama ile hedef arasındaki fark
+
+`supabase/functions/_shared/reply-agent.ts` incelemesinde ana model cevabı
+alındıktan sonra routing satırı yazılıyor. Ana API çağrısı hata verirse bu
+satıra ulaşılmıyor; `foldConversationSummary` içindeki ek model çağrısının
+maliyet/gecikmesi de routing'e yazılmıyor. Routing yazım hatası yalnız console'a
+gidiyor. Dolayısıyla bugünkü toplam yalnız **kaydedilmiş ana çağrı tahmini**dir.
+Fiyat, token/cache ayrıntısı, deneme kimliği, model bazlı hata oranı ve maliyet
+başına tekil lead verisi rapordan çıkarılamaz. Üretim instrumentation düzeltmesi
+bu işin kapsamında değildir; Claude'a aktarılacak somut uygulama açığıdır.
+
+Senaryo kataloğu: `tests/scenarios/analytics-cost-cases.json`. Her vakanın
+gerçekçi bağlamı, kayıt anı, yazılmaması gereken olayları, sentetik metrik
+girdisi ve rapor beklentisi bulunur. Testler rapor hesaplarını doğrular;
+üretimde olay yazımının çalıştığını kanıtlamaz.

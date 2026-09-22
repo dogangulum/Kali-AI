@@ -135,7 +135,12 @@ function parseArgs() {
   const result = { logFile: null };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--log-file' || args[i] === '-l') {
-      result.logFile = path.resolve(args[++i]);
+      const nextArg = args[++i];
+      if (!nextArg) {
+        console.error('HATA: --log-file / -l seçeneği bir dosya yolu gerektirir');
+        process.exit(1);
+      }
+      result.logFile = path.resolve(nextArg);
     }
   }
   return result;

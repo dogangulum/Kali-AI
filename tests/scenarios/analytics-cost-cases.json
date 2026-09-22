@@ -1,0 +1,2146 @@
+{
+  "format": "analytics-cost-scenarios/v1",
+  "description": "Bağımsız sentetik kabul örnekleri. input hedef olay projeksiyonudur; üretim olay yazımı bu testlerle kanıtlanmaz. must_not_record yalnız bu geçişte yazılmaması gereken yeni olayları belirtir.",
+  "cases": [
+    {
+      "id": "AT01",
+      "category": "tracking",
+      "story": "Müşteri ilk kez “Merhaba, el bakımı fiyatı nedir?” yazıyor.",
+      "when": "Yeni konuşmanın ilk geçerli mesajı kalıcı kaydedildikten sonra.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "dm_started"
+          }
+        ],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.dm_started": 1
+      },
+      "must_not_record": [
+        "f:lead_qualified"
+      ]
+    },
+    {
+      "id": "AT02",
+      "category": "tracking",
+      "story": "Aynı müşteri ikinci mesajında “Kaç dakika sürer?” diyor.",
+      "when": "Aynı açık konuşmada devam mesajı kaydedildiğinde.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.dm_started": 0
+      },
+      "must_not_record": [
+        "f:dm_started"
+      ]
+    },
+    {
+      "id": "AT03",
+      "category": "tracking",
+      "story": "Meta aynı ilk mesajı aynı teslimat kimliğiyle tekrar iletiyor.",
+      "when": "Önceki başarılı işlemin tekrarı saptandığında yeni iş olayı yazılmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.dm_started": 0
+      },
+      "must_not_record": [
+        "f:dm_started"
+      ]
+    },
+    {
+      "id": "AT04",
+      "category": "tracking",
+      "story": "Müşteri mesajı yerine WhatsApp okundu bildirimi geliyor.",
+      "when": "Read receipt alınması müşteri konuşması başlatmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.dm_started": 0
+      },
+      "must_not_record": [
+        "f:dm_started"
+      ]
+    },
+    {
+      "id": "AT05",
+      "category": "tracking",
+      "story": "Temsilci müşteriye ilk kez dışarıdan mesaj gönderiyor.",
+      "when": "Outbound kayıt inbound DM başlangıcı sayılmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.dm_started": 0
+      },
+      "must_not_record": [
+        "f:dm_started"
+      ]
+    },
+    {
+      "id": "AT06",
+      "category": "tracking",
+      "story": "“Randevu istiyorum” mesajı geldi fakat mesaj kaydı başarısız.",
+      "when": "Kayıt hatası gözlendiğinde; başarı metriği yazılmadan.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "system_error"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.dm_started": 0
+      },
+      "must_not_record": [
+        "f:dm_started",
+        "f:appointment_booked"
+      ]
+    },
+    {
+      "id": "AT07",
+      "category": "tracking",
+      "story": "Müşteri “Reklamınızı gördüm” yazıyor; reklam kaynağı doğrulanmamış.",
+      "when": "İlk mesaj kaydı sonrası DM; görüntülenme kanıtı yok.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "dm_started"
+          }
+        ],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.reel_view": 0
+      },
+      "must_not_record": [
+        "f:reel_view"
+      ]
+    },
+    {
+      "id": "AT08",
+      "category": "tracking",
+      "story": "Yetkili reklam kaynağı tek görüntülenme olayı gönderiyor.",
+      "when": "Doğrulanmış tekil kaynak olayı kabul edilince.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "reel_view"
+          }
+        ],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.reel_view": 1
+      },
+      "must_not_record": [
+        "f:dm_started"
+      ]
+    },
+    {
+      "id": "AT09",
+      "category": "tracking",
+      "story": "Panel yalnız toplam 100 görüntülenme döndürüyor.",
+      "when": "Toplu ölçüm kişisel/tekil funnel olayı gibi genişletilmez.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.reel_view": 0
+      },
+      "must_not_record": [
+        "f:reel_view"
+      ]
+    },
+    {
+      "id": "AT10",
+      "category": "tracking",
+      "story": "Müşteri yalnız “Fiyat nedir?” diye soruyor, skor değişiyor.",
+      "when": "Yeni skor uygulanınca; qualification geçişi oluşmadı.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "lead_scored"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.lead_qualified": 0
+      },
+      "must_not_record": [
+        "f:lead_qualified"
+      ]
+    },
+    {
+      "id": "AT11",
+      "category": "tracking",
+      "story": "Müşteri hizmet ve uygun gün belirtti; qualification kuralı sağlandı.",
+      "when": "İlk doğrulanmış qualified geçişi başarıyla uygulanınca.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "lead_qualified"
+          }
+        ],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "lead_scored"
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "lead_qualified"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.lead_qualified": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AT12",
+      "category": "tracking",
+      "story": "Zaten qualified müşteri “Evet o hizmet” diye tekrar yazıyor.",
+      "when": "Yeni qualification geçişi olmadığından funnel artmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.lead_qualified": 0
+      },
+      "must_not_record": [
+        "f:lead_qualified"
+      ]
+    },
+    {
+      "id": "AT13",
+      "category": "tracking",
+      "story": "Lead skoru 70 iken ek bilgiyle 75 oldu; status aynı.",
+      "when": "Skor değişimi kaydedilince yalnız audit.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "lead_scored"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.qualification.lead_scored": 1
+      },
+      "must_not_record": [
+        "f:lead_qualified"
+      ]
+    },
+    {
+      "id": "AT14",
+      "category": "tracking",
+      "story": "Takipçi satan spam hesabı disqualified olarak işaretlendi.",
+      "when": "Karar başarıyla uygulanınca.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "lead_disqualified"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.qualification.lead_disqualified": 1
+      },
+      "must_not_record": [
+        "f:lead_qualified"
+      ]
+    },
+    {
+      "id": "AT15",
+      "category": "tracking",
+      "story": "Aynı qualification geçişi audit ve funnel tablolarında var.",
+      "when": "İki görünüm tek geçişi temsil eder; sayılar toplanmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "lead_qualified"
+          }
+        ],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "lead_qualified"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.lead_qualified": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AT16",
+      "category": "booking",
+      "story": "Müşteri “Yarın manikür için randevu alabilir miyim?” diyor.",
+      "when": "Yeni anlaşılır talep alındığında; henüz kesin kayıt yok.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_requested"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.appointment_requested": 1
+      },
+      "must_not_record": [
+        "f:appointment_booked"
+      ]
+    },
+    {
+      "id": "AT17",
+      "category": "booking",
+      "story": "Sistem 15:00 teklif etti; müşteri henüz cevap vermedi.",
+      "when": "Pending teklif için booked olayı yazılmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.appointment_booked": 0
+      },
+      "must_not_record": [
+        "f:appointment_booked",
+        "a:appointment_confirmed"
+      ]
+    },
+    {
+      "id": "AT18",
+      "category": "booking",
+      "story": "Müşteri tek güncel teklifi onayladı, confirmed kayıt başarılı.",
+      "when": "Uygunluk ve kalıcı kayıt doğrulandıktan sonra.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_booked"
+          }
+        ],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_confirmed"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.appointment_booked": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AT19",
+      "category": "booking",
+      "story": "Müşteri “Tamam” dedi fakat önceki mesaj yalnız fiyat bilgisi.",
+      "when": "Belirsiz onayda yeni kayıt veya başarı olayı yok.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.appointment_booked": 0
+      },
+      "must_not_record": [
+        "f:appointment_booked"
+      ]
+    },
+    {
+      "id": "AT20",
+      "category": "booking",
+      "story": "15:00 istendi ancak aynı kaynak başka müşteriye ayrılmış.",
+      "when": "Çakışma doğrulandıktan sonra.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_conflict_detected"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.appointment_conflict_detected": 1
+      },
+      "must_not_record": [
+        "f:appointment_booked"
+      ]
+    },
+    {
+      "id": "AT21",
+      "category": "booking",
+      "story": "Müşteri onayladı; randevu kaydı zaman aşımına uğradı, sonucu belirsiz.",
+      "when": "Kayıt durumu doğrulanana kadar başarı yazılmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "system_error"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.appointment_booked": 0
+      },
+      "must_not_record": [
+        "f:appointment_booked",
+        "a:appointment_confirmed"
+      ]
+    },
+    {
+      "id": "AT22",
+      "category": "booking",
+      "story": "Aynı randevunun onayı tekrar teslim edildi.",
+      "when": "Mevcut kesinleşmiş geçiş için ikinci booked yok.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.appointment_booked": 0
+      },
+      "must_not_record": [
+        "f:appointment_booked"
+      ]
+    },
+    {
+      "id": "AT23",
+      "category": "booking",
+      "story": "Müşteri “İptal edersem ücret var mı?” diye bilgi soruyor.",
+      "when": "Bilgi sorusu iptal işlemi değildir.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.appointment_cancelled": 0
+      },
+      "must_not_record": [
+        "a:appointment_cancelled"
+      ]
+    },
+    {
+      "id": "AT24",
+      "category": "booking",
+      "story": "Müşteri iptal istedi; mevcut randevu cancelled durumuna geçti.",
+      "when": "İptal başarıyla kalıcılaştığında yalnız audit.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_cancelled"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.appointment_cancelled": 1
+      },
+      "must_not_record": [
+        "f:appointment_booked"
+      ]
+    },
+    {
+      "id": "AT25",
+      "category": "booking",
+      "story": "İptal isteği zaten cancelled randevu için tekrar geliyor.",
+      "when": "Yeni status geçişi olmadığından ikinci iptal yazılmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.appointment_cancelled": 0
+      },
+      "must_not_record": [
+        "a:appointment_cancelled"
+      ]
+    },
+    {
+      "id": "AT26",
+      "category": "booking",
+      "story": "İptal istendi ama veritabanı güncellemesi başarısız.",
+      "when": "İptal hatasında başarı metriği yerine teknik hata.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "system_error"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.appointment_cancelled": 0
+      },
+      "must_not_record": [
+        "a:appointment_cancelled"
+      ]
+    },
+    {
+      "id": "AT27",
+      "category": "booking",
+      "story": "Müşteri 15:00 yerine 16:00 istedi, değişiklik doğrulanıp kaydedildi.",
+      "when": "Başarılı tarih/saat değişimi sonrası; aynı randevu yeni booking değil.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_rescheduled"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.appointment_rescheduled": 1
+      },
+      "must_not_record": [
+        "f:appointment_booked",
+        "a:appointment_cancelled"
+      ]
+    },
+    {
+      "id": "AT28",
+      "category": "booking",
+      "story": "Erteleme istenen yeni saat dolu; müşteri eskisi kalsın diyor.",
+      "when": "Çakışma kaydı; başarılı erteleme/iptal yok.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_conflict_detected"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.appointment_rescheduled": 0
+      },
+      "must_not_record": [
+        "a:appointment_rescheduled",
+        "a:appointment_cancelled"
+      ]
+    },
+    {
+      "id": "AT29",
+      "category": "booking",
+      "story": "Müşteri ertesi ay için ayrı, çakışmayan yeni randevuyu onaylıyor.",
+      "when": "Ayrı randevunun confirmed kaydı başarılı olduğunda.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_booked"
+          }
+        ],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_confirmed"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.appointment_booked": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AT30",
+      "category": "outcome",
+      "story": "Müşteri “Yoldayım, geliyorum” yazıyor.",
+      "when": "Geliş doğrulanmadı; mesajdan arrived/conversion türetilmez.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.customer_arrived": 0
+      },
+      "must_not_record": [
+        "a:customer_arrived",
+        "f:customer_converted"
+      ]
+    },
+    {
+      "id": "AT31",
+      "category": "outcome",
+      "story": "Resepsiyon müşterinin salona geldiğini doğruladı.",
+      "when": "Yetkili geliş doğrulaması kaydedilince.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "customer_arrived"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.customer_arrived": 1
+      },
+      "must_not_record": [
+        "f:customer_converted"
+      ]
+    },
+    {
+      "id": "AT32",
+      "category": "outcome",
+      "story": "Randevu saati geçti ama müşteri durumu bilinmiyor.",
+      "when": "Zaman geçmesi tamamlanma veya no-show kanıtı değildir.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.appointment_completed": 0
+      },
+      "must_not_record": [
+        "a:appointment_completed",
+        "a:appointment_no_show",
+        "f:customer_converted"
+      ]
+    },
+    {
+      "id": "AT33",
+      "category": "outcome",
+      "story": "Uzman hizmetin tamamlandığını doğruladı; dönüşüm politikası henüz yok.",
+      "when": "Tamamlanma kaydı sonrası audit; conversion tahmini yok.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_completed"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.customer_converted": 0
+      },
+      "must_not_record": [
+        "f:customer_converted"
+      ]
+    },
+    {
+      "id": "AT34",
+      "category": "outcome",
+      "story": "Tamamlanan hizmet onaylı dönüşüm tanımını ilk kez sağladı.",
+      "when": "Doğrulanmış ilk dönüşüm geçişi kaydedilince.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "customer_converted"
+          }
+        ],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_completed"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "tables.funnel_events.counts.customer_converted": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AT35",
+      "category": "outcome",
+      "story": "Resepsiyon politikaya göre müşterinin gelmediğini doğruladı.",
+      "when": "Doğrulanmış no-show audit; şemaya yeni appointment status eklenmez.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_no_show"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.appointments.appointment_no_show": 1
+      },
+      "must_not_record": [
+        "f:customer_converted"
+      ]
+    },
+    {
+      "id": "AT36",
+      "category": "handoff",
+      "story": "Müşteri bir yetkiliyle konuşmak istedi, devir kaydı açıldı.",
+      "when": "Açık escalation başarıyla oluşturulunca.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "escalation_created"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.handoff.escalation_created": 1
+      },
+      "must_not_record": [
+        "f:appointment_booked"
+      ]
+    },
+    {
+      "id": "AT37",
+      "category": "handoff",
+      "story": "Aynı açık insan devri için ikinci bildirim geldi.",
+      "when": "Bildirim tekrarı ikinci escalation geçişi sayılmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.handoff.escalation_created": 0
+      },
+      "must_not_record": [
+        "a:escalation_created"
+      ]
+    },
+    {
+      "id": "AT38",
+      "category": "handoff",
+      "story": "Temsilci sorunu çözdü, resolved durumunu kaydetti.",
+      "when": "Gerçek çözüm doğrulanıp kaydedilince.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "escalation_resolved"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.handoff.escalation_resolved": 1
+      },
+      "must_not_record": [
+        "f:customer_converted"
+      ]
+    },
+    {
+      "id": "AT39",
+      "category": "handoff",
+      "story": "Kimse cevap vermedi; devir halen open.",
+      "when": "Bekleme çözüm değildir; resolved audit yazılmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.handoff.escalation_resolved": 0
+      },
+      "must_not_record": [
+        "a:escalation_resolved"
+      ]
+    },
+    {
+      "id": "AT40",
+      "category": "cost-events",
+      "story": "Basit fiyat sorusu için model seçildi, çağrı henüz yapılmadı.",
+      "when": "Yalnız routing kararı verildiğinde.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "model_routed"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "tables.model_routing_log.total.rows": 0
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AT41",
+      "category": "cost-events",
+      "story": "Sağlayıcı çağrısı hata verdi, ücret bilgisi alınamadı.",
+      "when": "Teknik hata gözlendiğinde; maliyet bilinmiyor.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "model_call_failed"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.model.model_call_failed": 1
+      },
+      "must_not_record": [
+        "f:lead_qualified"
+      ]
+    },
+    {
+      "id": "AT42",
+      "category": "cost-events",
+      "story": "Geçici sağlayıcı hatasından sonra gerçekten yeniden çağrı başlatıldı.",
+      "when": "Retry politikası kapsamında yeni deneme yapıldığında.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "model_call_retried"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.model.model_call_retried": 1
+      },
+      "must_not_record": [
+        "f:dm_started"
+      ]
+    },
+    {
+      "id": "AT43",
+      "category": "cost-events",
+      "story": "Sağlayıcı isteği reddetti; kalite başarısı olarak sayılamıyor.",
+      "when": "Ret sonucu doğrulandığında.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "model_call_rejected"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.model.model_call_rejected": 1
+      },
+      "must_not_record": [
+        "f:lead_qualified"
+      ]
+    },
+    {
+      "id": "AT44",
+      "category": "cost-events",
+      "story": "Aynı kapsamlı karşılaştırmada maliyet artış eşiği aşımı doğrulandı.",
+      "when": "Tanımlı karşılaştırma kuralı ilk kez tetiklenince.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "cost_increase_detected"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.cost.cost_increase_detected": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AT45",
+      "category": "cost-events",
+      "story": "Bu ay bütçe uyarı eşiği ilk kez aşıldı.",
+      "when": "Yetkili izleme süreci eşik geçişini kaydedince.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "cost_budget_warning"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.cost.cost_budget_warning": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AT46",
+      "category": "cost-events",
+      "story": "Rapor ekranı aynı eşik için on kez yenilendi.",
+      "when": "Salt rapor yenilemek audit olayı yazmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.cost.cost_budget_warning": 0
+      },
+      "must_not_record": [
+        "a:cost_budget_warning"
+      ]
+    },
+    {
+      "id": "AT47",
+      "category": "cost-events",
+      "story": "Bütçe limiti aşımı doğrulandı ve izleme olayı kaydedildi.",
+      "when": "Dönem/limit kapsamı aynı olan ilk aşımda.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "cost_budget_exceeded"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.cost.cost_budget_exceeded": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AT48",
+      "category": "failure",
+      "story": "Yanıt üretildi ancak routing log yazımı başarısız oldu.",
+      "when": "Kayıp gözlendiğinde telemetry hatası; modeli sırf log için tekrar çağırma.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "telemetry_write_failed"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.diagnostics": [
+          "routing_no_rows",
+          "telemetry_write_failures_recorded",
+          "funnel_coverage_unverified"
+        ]
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AT49",
+      "category": "failure",
+      "story": "Model ücretli cevap üretti ama yanıt taslağı kaydedilemedi.",
+      "when": "Yanıt kayıt hatası gözlendiğinde.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "reply_store_failed"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.failures.reply_store_failed": 1
+      },
+      "must_not_record": [
+        "f:customer_converted"
+      ]
+    },
+    {
+      "id": "AT50",
+      "category": "failure",
+      "story": "Hazırlanan yanıt müşteriye gönderilirken teslimat başarısız.",
+      "when": "Teslimat başarısızlığı doğrulanınca; model başarısıyla karıştırılmaz.",
+      "input": {
+        "model_routing_log": [],
+        "funnel_events": [],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "reply_delivery_failed"
+          }
+        ],
+        "escalations": []
+      },
+      "expected": {
+        "analytics.operations.failures.reply_delivery_failed": 1
+      },
+      "must_not_record": [
+        "f:customer_converted"
+      ]
+    },
+    {
+      "id": "AC01",
+      "category": "reporting",
+      "story": "Ana cevap çağrısı 0.01 USD, 100 ms olarak kaydedildi.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.model_routing_log.total.known_cost_usd": 0.01,
+        "tables.model_routing_log.total.mean_latency_ms": 100
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC02",
+      "category": "reporting",
+      "story": "Bir ücretli deneme başarısız oldu; ölçümü var, sonraki retry başarılı.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.02,
+            "latency_ms": 200
+          }
+        ],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "model_call_failed"
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "model_call_retried"
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.model_routing_log.total.known_cost_usd": 0.03,
+        "tables.model_routing_log.total.rows": 2
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC03",
+      "category": "reporting",
+      "story": "Ana yanıt ve ek özet çağrısı ayrı ölçüldü; ikisi de ücretli.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.02,
+            "latency_ms": 200
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.model_routing_log.total.known_cost_usd": 0.03
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC04",
+      "category": "reporting",
+      "story": "Eski uygulama yalnız ana yanıtı logladı; özet çağrısı görünmüyor.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "analytics.budget.coverage_verified": false,
+        "tables.model_routing_log.total.known_cost_usd": 0.01
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC05",
+      "category": "reporting",
+      "story": "Model bilinmeyen tarifeyle çağrıldı, maliyet null geldi.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": null,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "budgetUsd": 1
+      },
+      "expected": {
+        "analytics.budget.state": "unknown",
+        "tables.model_routing_log.total.cost_missing": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC06",
+      "category": "reporting",
+      "story": "Sağlayıcı doğrulanmış ücretsiz deneme için sıfır maliyet verdi.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0,
+            "latency_ms": 0
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.model_routing_log.total.known_cost_usd": 0,
+        "tables.model_routing_log.total.cost_samples": 1,
+        "tables.model_routing_log.total.mean_latency_ms": 0
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC07",
+      "category": "reporting",
+      "story": "Numeric SQL maliyeti metin olarak dışa aktarıldı.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": "0.001250",
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": "0.002500",
+            "latency_ms": 200
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.model_routing_log.total.known_cost_usd": 0.00375
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC08",
+      "category": "reporting",
+      "story": "Biri ölçülmüş biri bilinmeyen çağrı var; toplam alt sınır.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.5,
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": null,
+            "latency_ms": null
+          }
+        ]
+      },
+      "options": {
+        "budgetUsd": 1
+      },
+      "expected": {
+        "analytics.budget.state": "below_warning_known_only",
+        "analytics.budget.missing_cost_rows": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC09",
+      "category": "reporting",
+      "story": "Bilinen dönem maliyeti uyarı eşiğinin hemen altında.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.799999,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "budgetUsd": 1
+      },
+      "expected": {
+        "analytics.budget.state": "below_warning_known_only"
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC10",
+      "category": "reporting",
+      "story": "Bilinen maliyet bütçenin tam yüzde 80 seviyesinde.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.8,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "budgetUsd": 1
+      },
+      "expected": {
+        "analytics.budget.state": "warning",
+        "analytics.budget.known_usage_percent": 80
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC11",
+      "category": "reporting",
+      "story": "Bütçenin tam yüzde 100 seviyesi doldu.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 1,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "budgetUsd": 1
+      },
+      "expected": {
+        "analytics.budget.state": "at_limit"
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC12",
+      "category": "reporting",
+      "story": "Bütçe bir mikro dolar aşıldı.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 1.000001,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "budgetUsd": 1
+      },
+      "expected": {
+        "analytics.budget.state": "exceeded"
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC13",
+      "category": "reporting",
+      "story": "Bilinen maliyet limiti aştı; ayrıca maliyeti eksik çağrı var.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 2,
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": null,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "budgetUsd": 1
+      },
+      "expected": {
+        "analytics.budget.state": "exceeded",
+        "analytics.budget.missing_cost_rows": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC14",
+      "category": "reporting",
+      "story": "İşletme uyarı eşiğini yüzde 60 seçti.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.6,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "budgetUsd": 1,
+        "warningPercent": 60
+      },
+      "expected": {
+        "analytics.budget.state": "warning",
+        "analytics.budget.warning_percent": 60
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC15",
+      "category": "reporting",
+      "story": "Bütçe belirtilmedi; rapor kendiliğinden işletme limiti koymaz.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 999,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "analytics.budget.state": "not_configured"
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC16",
+      "category": "reporting",
+      "story": "Dışa aktarım routing tablosunu hiç içermiyor.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "audit_log": []
+      },
+      "options": {
+        "budgetUsd": 1
+      },
+      "expected": {
+        "tables.model_routing_log.state": "not_supplied",
+        "analytics.budget.state": "unknown"
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC17",
+      "category": "reporting",
+      "story": "Routing tablosu alındı ama dönem içinde kayıt yok.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": []
+      },
+      "options": {
+        "budgetUsd": 1
+      },
+      "expected": {
+        "tables.model_routing_log.state": "no_rows",
+        "analytics.budget.state": "unknown"
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC18",
+      "category": "reporting",
+      "story": "Tüm gecikmeler bilinmiyor; sıfır ms olarak sunulmamalı.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": null
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.model_routing_log.total.mean_latency_ms": null,
+        "tables.model_routing_log.total.p95_latency_ms": null
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC19",
+      "category": "reporting",
+      "story": "Küçük örnekte p95 en yüksek ölçüme denk geliyor.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 900
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 200
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.model_routing_log.total.p95_latency_ms": 900,
+        "tables.model_routing_log.total.mean_latency_ms": 400
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC20",
+      "category": "reporting",
+      "story": "Aynı model adı iki sağlayıcıda kullanılmış.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "other",
+            "model": "small",
+            "cost_usd": 0.02,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.model_routing_log.by_model.length": 2,
+        "analytics.model_mix.length": 2
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC21",
+      "category": "reporting",
+      "story": "Aynı sağlayıcının küçük ve büyük modelleri farklı paylarda kullanıldı.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "large",
+            "cost_usd": 0.05,
+            "latency_ms": 300
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.model_routing_log.by_model.length": 2,
+        "tables.model_routing_log.total.known_cost_usd": 0.07
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC22",
+      "category": "reporting",
+      "story": "UTC 21:30 kaydı İstanbul takviminde ertesi güne ait.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T21:30:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "timezone": "Europe/Istanbul"
+      },
+      "expected": {
+        "analytics.routing_by_day.0.day": "2026-09-23"
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC23",
+      "category": "reporting",
+      "story": "Aynı kayıt UTC varsayılan raporda önceki takvim gününde.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T21:30:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "analytics.routing_by_day.0.day": "2026-09-22",
+        "analytics.routing_days_timezone": "UTC"
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC24",
+      "category": "reporting",
+      "story": "New York yaz saati geri dönüşünde tekrarlanan saat iki gerçek çağrı içeriyor.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-11-01T05:30:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-11-01T06:30:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.02,
+            "latency_ms": 200
+          }
+        ]
+      },
+      "options": {
+        "timezone": "America/New_York"
+      },
+      "expected": {
+        "analytics.routing_by_day.length": 1,
+        "analytics.routing_by_day.0.rows": 2,
+        "analytics.routing_by_day.0.day": "2026-11-01"
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC25",
+      "category": "reporting",
+      "story": "Ay sonu İstanbul gece yarısı kayıtları ayrı rapor dönemlerine düşer.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-30T20:59:59Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-09-30T21:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.02,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "from": "2026-09-01T00:00:00+03:00",
+        "to": "2026-10-01T00:00:00+03:00",
+        "timezone": "Europe/Istanbul"
+      },
+      "expected": {
+        "tables.model_routing_log.selected_rows": 1,
+        "tables.model_routing_log.total.known_cost_usd": 0.01
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC26",
+      "category": "reporting",
+      "story": "Filtrenin başlangıcındaki olay dahil, bitişindeki olay hariç.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "dm_started"
+          },
+          {
+            "created_at": "2026-09-22T08:00:00Z",
+            "event_type": "dm_started"
+          }
+        ]
+      },
+      "options": {
+        "from": "2026-09-22T07:00:00Z",
+        "to": "2026-09-22T08:00:00Z"
+      },
+      "expected": {
+        "tables.funnel_events.counts.dm_started": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC27",
+      "category": "reporting",
+      "story": "Dünün olayı bugün geç yüklendi; yalnız created_at var.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_booked"
+          }
+        ]
+      },
+      "options": {
+        "from": "2026-09-22T00:00:00Z",
+        "to": "2026-09-23T00:00:00Z"
+      },
+      "expected": {
+        "tables.funnel_events.counts.appointment_booked": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC28",
+      "category": "reporting",
+      "story": "Bu dönemde iki booking var; önceki dönemde başlayan tek DM görünüyor.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "dm_started"
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_booked"
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_booked"
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.funnel_events.counts.appointment_booked": 2,
+        "tables.funnel_events.counts.dm_started": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC29",
+      "category": "reporting",
+      "story": "Booking geçmişi ve iptal olayı aynı dönemde; aktif stok hesaplanamaz.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_booked"
+          }
+        ],
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_cancelled"
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.funnel_events.counts.appointment_booked": 1,
+        "analytics.operations.appointments.appointment_cancelled": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC30",
+      "category": "reporting",
+      "story": "Yeni bir audit türü rapor aracının sabit gruplarında tanımlı değil.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "configuration_reviewed"
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "analytics.other_audit_events.configuration_reviewed": 1
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC31",
+      "category": "reporting",
+      "story": "Export aynı routing satırını iki kez içeriyor; kimlik olmadığı için ayırt edilemez.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          },
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.model_routing_log.total.rows": 2,
+        "tables.model_routing_log.total.known_cost_usd": 0.02
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AC32",
+      "category": "reporting",
+      "story": "Bugün oluşturulan devir export anında çözüldü; tarihsel SLA bilinmiyor.",
+      "when": "Verilen metrik projeksiyonu raporlanırken.",
+      "input": {
+        "escalations": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "status": "resolved"
+          }
+        ]
+      },
+      "options": {},
+      "expected": {
+        "tables.escalations.counts.resolved": 1,
+        "analytics.operations.handoff.escalation_resolved": null
+      },
+      "must_not_record": []
+    },
+    {
+      "id": "AV01",
+      "category": "invalid-input",
+      "story": "Maliyet sütununa eksi tutarlı bir iade yanlışlıkla yazılmış.",
+      "when": "Bozuk metrik rapora alınmadan açık hata verilmeli.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": -1,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {},
+      "expected_error": "Geçersiz metrik",
+      "must_not_record": []
+    },
+    {
+      "id": "AV02",
+      "category": "invalid-input",
+      "story": "İptal olayı yanlışlıkla funnel enum türü olarak export edilmiş.",
+      "when": "Bozuk metrik rapora alınmadan açık hata verilmeli.",
+      "input": {
+        "funnel_events": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "appointment_cancelled"
+          }
+        ]
+      },
+      "options": {},
+      "expected_error": "Bilinmeyen funnel",
+      "must_not_record": []
+    },
+    {
+      "id": "AV03",
+      "category": "invalid-input",
+      "story": "31 Şubat tarihli kayıt normalize edilmeden gelmiş.",
+      "when": "Bozuk metrik rapora alınmadan açık hata verilmeli.",
+      "input": {
+        "audit_log": [
+          {
+            "created_at": "2026-02-31T07:00:00Z",
+            "event_type": "system_error"
+          }
+        ]
+      },
+      "options": {},
+      "expected_error": "Geçersiz ISO",
+      "must_not_record": []
+    },
+    {
+      "id": "AV04",
+      "category": "invalid-input",
+      "story": "Saat dilimi yazılmamış yerel zaman gönderilmiş.",
+      "when": "Bozuk metrik rapora alınmadan açık hata verilmeli.",
+      "input": {
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00",
+            "event_type": "system_error"
+          }
+        ]
+      },
+      "options": {},
+      "expected_error": "Geçersiz ISO",
+      "must_not_record": []
+    },
+    {
+      "id": "AV05",
+      "category": "invalid-input",
+      "story": "Metrik export yerine ham audit payload alanı eklenmiş.",
+      "when": "Bozuk metrik rapora alınmadan açık hata verilmeli.",
+      "input": {
+        "audit_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "event_type": "system_error",
+            "payload": {}
+          }
+        ]
+      },
+      "options": {},
+      "expected_error": "yalnız belgelenmiş",
+      "must_not_record": []
+    },
+    {
+      "id": "AV06",
+      "category": "invalid-input",
+      "story": "Bütçe sıfır girilmiş; yüzde hesabı yapılamaz.",
+      "when": "Bozuk metrik rapora alınmadan açık hata verilmeli.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "budgetUsd": 0
+      },
+      "expected_error": "Bütçe pozitif",
+      "must_not_record": []
+    },
+    {
+      "id": "AV07",
+      "category": "invalid-input",
+      "story": "Uyarı yüzdesi 100 girilmiş; limit ile eşik karıştırılmış.",
+      "when": "Bozuk metrik rapora alınmadan açık hata verilmeli.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "budgetUsd": 1,
+        "warningPercent": 100
+      },
+      "expected_error": "Uyarı yüzdesi",
+      "must_not_record": []
+    },
+    {
+      "id": "AV08",
+      "category": "invalid-input",
+      "story": "Uyarı yüzdesi bütçe verilmeden istenmiş.",
+      "when": "Bozuk metrik rapora alınmadan açık hata verilmeli.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "warningPercent": 80
+      },
+      "expected_error": "bütçe gerekli",
+      "must_not_record": []
+    },
+    {
+      "id": "AV09",
+      "category": "invalid-input",
+      "story": "Dönem başlangıcı bitişten sonra girilmiş.",
+      "when": "Bozuk metrik rapora alınmadan açık hata verilmeli.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "from": "2026-09-23T00:00:00Z",
+        "to": "2026-09-22T07:00:00Z"
+      },
+      "expected_error": "Başlangıç",
+      "must_not_record": []
+    },
+    {
+      "id": "AV10",
+      "category": "invalid-input",
+      "story": "IANA saat dilimi adı hatalı girilmiş.",
+      "when": "Bozuk metrik rapora alınmadan açık hata verilmeli.",
+      "input": {
+        "model_routing_log": [
+          {
+            "created_at": "2026-09-22T07:00:00Z",
+            "provider": "synthetic",
+            "model": "small",
+            "cost_usd": 0.01,
+            "latency_ms": 100
+          }
+        ]
+      },
+      "options": {
+        "timezone": "Not/A_Zone"
+      },
+      "expected_error": "saat dilimi",
+      "must_not_record": []
+    }
+  ]
+}

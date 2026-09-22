@@ -75,7 +75,29 @@ Bu klasördeki yardımcı script'ler, yerel geliştirme ve webhook doğrulama ak
 - Dikkat: Bu araç gerçek bir Meta webhook, gerçek Supabase proje veya gerçek Anthropic API anahtarı kullanmaz; tamamen kuru/deneme modundadır. Ama aynı test harness'i kullanır; bu yüzden gerçek üretim akışının davranışını yansıtır.
 - Amaç: "Gerçek anahtar olmadan bütün sistemi deneme" amacıyla oluşturulmuştur; güvenlik riski olmadan, yerel ortamda akışın genel davranışını görmek için kullanılır.
 
-## 6) check-readiness.cjs
+## 6) live-monitor.cjs
+- Ne işe yarar: Canlı test sırasında en son gelen/giden mesajları ve model routing kararlarını, Supabase'den okuma modunda gerçek zamanlı olarak izlemek için kullanılır. Amacı canlı bir WhatsApp/Instagram testini izlemek ve "mesaj kaydedildi mi / hangi model kullanıldı / hangi taslak oluştu?" sorularına hızlı yanıt vermektir.
+- Çalıştırma:
+  ```powershell
+  npm run monitor:live
+  ```
+  veya doğrudan:
+  ```powershell
+  node scripts/live-monitor.cjs
+  ```
+  İsterseniz son N mesajı da parametre olarak verebilirsiniz:
+  ```powershell
+  node scripts/live-monitor.cjs 25
+  ```
+- Ne yapar:
+  - `messages` tablosundan en son kayıtları çeker
+  - `model_routing_log` tablosundan model maliyet ve gecikme bilgilerini alır
+  - `conversations` tablosunu ilişkilendirerek platform ve müşteri kimliğini gösterir
+  - çıktıda bir zaman çizelgesi (timeline) hazırlar
+  - sadece okuma yapar; yazma, gönderim veya sürüm değişikliği yapmaz
+- Dikkat: Bu araç gerçek müşteri kimliği ve mesaj içeriği görüntüleyebilir; test sırasında gerçek kişisel veri görünebilir. Kısacası "read-only canlı izleme" aracıdır. Geliştirme/deneme sırasında kullanılan harici anahtar ve müşteri bilgileri yine de güvenli ortamda tutulmalıdır.
+
+## 7) check-readiness.cjs
 - Ne işe yarar: Yerel geliştirme ortamının hazır olup olmadığını (dosyalar, JSON geçerliliği, Node.js/Deno sürümleri, ortam değişkenleri) toplu kontrol eder.
 - Çalıştırma:
   ```powershell
@@ -88,6 +110,38 @@ Bu klasördeki yardımcı script'ler, yerel geliştirme ve webhook doğrulama ak
   - Deno 2'nin PATH üzerinde erişilebilir olması
   - `check-env.cjs` aracılığıyla ortam değişkeni adlarının `.env.local` içinde bulunması
 - Dikket: Bu araç yalnızca yerel dosya ve sürüm kontrolleri yapar; canlı bağlantı, kimlik doğrulama, AI akışı, Supabase bağlantısı veya üretim hazırlığını doğrulamaz. Sadece "yerelde geliştirmeye başlanabilir mi?" sorusuna kısmi cevap verir.
+
+## 8) chat-simulator.cjs
+- Ne işe yarar: Gerçek API anahtarı olmadan terminalde canlı canlı sohbet simülasyonu yapar. Gerçek yönlendirme mantığı (classifyComplexity) çalışır, sahte AI cevabı verir.
+- Çalıştırma:
+  ```powershell
+  # Etkileşimli mod
+  node scripts/chat-simulator.cjs
+  
+  # Senaryo numarası ile doğrudan çalıştırma (1-6)
+  node scripts/chat-simulator.cjs 1
+  node scripts/chat-simulator.cjs 3
+  ```
+- Ne yapar:
+  - Lead/Randevu, İçerik/Reklam, Fiyat/Bilgi, İtiraz/Pazarlık, İnsan Desteği konularında hazır senaryolar sunar
+  - Her mesaj için konu etiketi, model yönlendirmesi (Haiku/Sonnet), yönlendirme nedeni ve sahte cevabı gösterir
+  - Fixture dosyalarından tek mesaj testine de izin verir
+- Dikket: Gerçek internet/API anahtarı KULLANMAZ; sadece sistemin "hissini" almak içindir.
+
+## 9) run-all-checks.cjs
+- Ne işe yarar: Tüm kontrol araçlarını (check-env, check-webhooks, check-readiness, check-business-info) tek komutla art arda çalıştırıp özet rapor verir.
+- Çalıştırma:
+  ```powershell
+  node scripts/run-all-checks.cjs
+  node scripts/run-all-checks.cjs --verbose
+  node scripts/run-all-checks.cjs config/business-config.example.md
+  ```
+- Ne yapar:
+  - Zorunlu kontrolleri (check-env, check-readiness) her zaman çalıştırır
+  - İsteğe bağlı kontrolleri (check-webhooks, check-business-info) uygun koşullar sağlanıyorsa çalıştırır
+  - Her kontrol için geçiş/başarısız/atlandı durumunu ve süreyi gösterir
+  - Sonunda özet rapor verir (toplam, geçen, başarısız, atlanan)
+- Dikkat: check-webhooks için SUPABASE_FUNCTIONS_URL ve token'lar, check-business-info için form dosyası argümanı gereklidir.
 
 ## Hızlı kullanım sırası
 

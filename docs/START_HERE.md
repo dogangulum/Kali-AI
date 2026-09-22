@@ -29,6 +29,14 @@ Bu hedef, `docs/PROJECT_HANDOFF.md` içinde detaylandırılmıştır. Proje büy
 
 Bu bölüm, repo içindeki mevcut durumun en net özetidir.
 
+### 2.0. Multi-tenant ve kişisel veri koruma kuralı
+
+Bu proje için en kritik kural şudur: bir işletmenin verisi, başka bir işletmenin verisiyle karışmamalıdır. Bu nedenle her sorgu ve her veri yazımı, `business_id` bazlı kapsam altında yapılmalıdır. `conversations`, `messages`, `leads`, `appointments`, `approvals`, `audit_log` gibi tabloların hiçbirinde "global customer id" veya "cross-business lookup" kabul edilmez.
+
+Aynı şekilde müşteri kişisel verileri (telefon numarası, Instagram kullanıcı kimliği, mesaj metni, ad/iletişim detayları) üretim loglarında, destek çıktılarında veya paylaşılan raporlarda açık olarak görünmemelidir. İstisnai durumlarda sadece maskelenmiş/özetlenmiş versiyon kullanılmalıdır.
+
+Bu kural, veritabanı tasarımında da yansıtılır: `business_id` tek ana sınırdır; müşteri tanımlayıcısı tek başına bir firma bağımsız kimlik değildir.
+
 ### 2.1. Hazır / var olan şeyler
 
 Aşağıdakiler gerçekten mevcut dosyalardır:

@@ -4,7 +4,13 @@ Bu belge, proje GitHub veya başka bir paylaşım ortamına yüklenecekse nelere
 
 ## 1) Paylaşım öncesinde kesinlikle kontrol edilmesi gerekenler
 
-### A. Secret ve token'lar
+### A. Multi-tenant izolasyon ve müşteri verisi koruma
+- Bir işletmenin verisi başka işletmenin verisiyle karıştırılmamalı; her veri okuma/yazma işlemi `business_id` ile sınırlandırılmalıdır.
+- `customer_identifier` alanı tek başına küresel müşteri kimliği değildir; aynı telefon/Instagram kimliği farklı işletmelerde aynı olabilir ve bu durum normaldir.
+- `messages.content` ve benzeri alanlar müşteri kişisel verisi içerdiği için destek çıktıları, loglar, e-posta ve paylaşım raporları içinde kırpılmalı / maskelenmelidir.
+- Paylaşılan örneklerde sahte veya maskelenmiş değerler kullanılmalıdır; gerçek WhatsApp numarası, isim, konuşma içeriği veya özel müşteri detayları asla eklenmemelidir.
+
+### B. Secret ve token'lar
 - `.env`, `.env.*`, `.env.local` dosyaları paylaşılmamalı.
 - `META_WHATSAPP_VERIFY_TOKEN`, `META_INSTAGRAM_VERIFY_TOKEN`, `META_APP_SECRET`, `KALI_BUSINESS_ID` gibi değerler hiçbir yere yazılmamalı.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` gibi erişim anahtarları da paylaşılmamalı.

@@ -17,6 +17,12 @@ Proje başlangıç aşamasında; henüz uçtan uca çalışan bir AI asistanı v
 
 Webhook'lar GET doğrulaması, POST imza kontrolü ve rate limiting uyguladıktan sonra doğrulanmış inbound mesajları veritabanına (conversations, messages tabloları) kaydeder ve payload'ı loglar; AI çağrısı yapmaz ve müşteriye mesaj göndermez. AI yanıtları, model seçimi, içerik üretimi, insan onay ekranı, reklam yönetimi, randevu iş akışı ve analitik henüz uygulanmış değildir. SQL tablolarının bulunması bu işlevlerin tamamlandığını garanti etmez; bazı gelişmiş iş akışları hâlâ eksiktir. Canlı servislerin veya Meta entegrasyonlarının durumu yalnızca bu dosyalardan doğrulanamaz.
 
+### Multi-tenant izolasyon ve veri koruma
+
+Bu projede en temel güvenlik kuralı şudur: bir işletmenin verileri başka bir işletmenin verileriyle karışmaz. Veritabanı tasarımı buna göre yapılmıştır (`business_id` her tabloda ana sınırdır). Geliştirme yaparken her veri sorgusu ve her ekleme işlemi mutlaka ilgili `business_id` ile sınırlandırılmalıdır; `customer_identifier` tek başına "müşteri kimliği" olarak kullanılamaz.
+
+Aynı şekilde müşteri kişisel verileri (`messages.content`, telefon/uygulama kullanıcı kimliği, gereksiz destek logları) paylaşılabilir dosyalara, sohbetlere ya da genel raporlara açık şekilde eklenmemelidir. Hata ve debug akışlarında veriler maskeleme/özetleme ile gösterilmelidir. Bu proje canlıya çıkmadan önce veri koruma kontrolü mutlaka yapılmalıdır.
+
 ## Dosya yapısı
 
 ```text

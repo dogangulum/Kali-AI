@@ -1,5 +1,10 @@
 # Lead Qualification ve Randevu Akışı Gereksinimleri
 
+**Okuma önceliği:** Bölüm 17, aşağıdaki taslağın inceleme ve düzeltme notlarını
+içerir. Çelişki halinde bölüm 17'deki açıklamalar esas alınır. Orada açık karar
+olarak bırakılan eşik, durum geçişi ve mimari konular onaylanmış kural değildir;
+uygulama bu boşlukları varsayımla doldurmamalıdır.
+
 Bu belge, projede henüz uygulanmamış iki ana iş akışını netleştirir:
 
 1. Gelen mesajın "gerçek bir müşteri adayı" olup olmadığına karar verme (lead qualification)
@@ -51,15 +56,16 @@ Lead qualification ve randevu akışı kararları şu verilere dayanmalıdır:
 
 ### 2.1. Lead sınıfları
 
-Sistem şu durumları tanımlamalıdır:
+`leads` tablosu için geçerli `status` değerleri şunlardır:
 
 - `new`: henüz değerlendirilmeyen mesaj
 - `qualified`: ciddi müşteri adayı
 - `disqualified`: uygun değil, otomatik olarak kapatılacak
 - `converted`: randevu veya satış sonrası müşteri olarak kabul edildi
-- `escalated`: insan müdahalesi gerekiyorsa
 
-`leads` tablosundaki `status` alanı bunu temsil eder. `qualification_score` alanı, müşteri adaylığını ölçmek için kullanılır; bu puan 0-100 aralığında olmalıdır.
+Not: `escalated` değeri doğrudan `leads.status` içinde yer almaz. İnsan müdahalesi gereken durumlar, `conversations.status` alanında `'escalated'` olarak işaretlenir ve `escalations` tablosunda açık/çözülmüş kayıt tutulur.
+
+`qualification_score` alanı, müşteri adaylığını ölçmek içindir; bu puan 0-100 aralığında olmalıdır.
 
 ### 2.2. Eşik değerleri
 
@@ -95,7 +101,7 @@ Aşağıdakiler bilgi sorgusu olarak değerlendirilir:
 
 #### C. Uygun değil / insan müdahalesi
 
-Aşağıdaki durumlar otomatik olarak escalated veya disqualified olur:
+Aşağıdaki durumlar otomatik olarak `disqualified` ya da `conversation.status = 'escalated'` ve `escalations` kaydı olarak işaretlenir:
 
 - müşteri ciddi şekilde uygun değil (ör. sadece merak / sohbet / yanlış kanal)
 - uygun tarih ve saat girebilecek bilgi yok ama işin ciddiyetini doğrulamak için insan gerek
@@ -293,7 +299,7 @@ Karar:
 - ancak net randevu bilgisi yok
 - fiyat/uygunluk belirsiz
 - insan onayı gerekebilir
-- `escalated` veya `new` + `requires_human_follow_up`
+- `conversations.status = 'escalated'` veya `new` + `requires_human_follow_up`
 
 ### 5.4. Lead süreci: ne zaman otomatik, ne zaman insan
 
@@ -514,7 +520,7 @@ Müşteri listede olmayan bir hizmetten bahsediyorsa:
 Sistem, böyle mesajları doğrudan lead olarak değerlendirmemeli:
 
 - yakınlaştırma / kopyalama / hakaret / kaba dil içeren mesajlarda insan müdahalesi uygun olur
-- bu mesajlar için `disqualified` veya `escalated` seçeneği uygulanır
+- bu mesajlar için `disqualified` veya `conversations.status = 'escalated'` seçeneği uygulanır
 
 ### 9.6. Tekrarlanan aynı mesaj / idempotency
 
@@ -556,7 +562,7 @@ Aşağıdaki örnek, kodlamaya başlanırken kullanılabilecek tipik süreci gö
 
 1. Müşteri: "Acaba çıkış tarihini yazabilir misiniz? Bunu da düşünüyorum ama tam karar veremedim."
 2. `qualification_score` orta ama belirsiz.
-3. Sistem, randevu tanımına dair hâlâ gerekli bilgi yoksa `escalated` oluşturur.
+3. Sistem, randevu tanımına dair hâlâ gerekli bilgi yoksa `conversations.status = 'escalated'` ve/veya `escalations` kaydı oluşturur.
 4. Ayşe'ye iletilir.
 5. İnsan nihai karar verir.
 
@@ -598,7 +604,7 @@ Her lead qualification ve randevu kararı için `audit_log` içine yazılmalıd�
 - `appointment_conflict_detected`
 - `escalated_to_human`
 
-`payload` içinde shunların saklanması gerekir:
+`payload` içinde şunların saklanması gerekir:
 
 - conversation_id
 - lead_id
@@ -671,10 +677,10 @@ Aşağıdaki tablo, kodlanacak karar mantığının kısa özeti olarak kullanı
 |---|---|
 | Belirli hizmet + niyet + uygun saat | `qualified` -> randevu akışı |
 | Sadece bilgi sorusu, niyet yok | `new` / düşük niyet; otomatik randevu oluşturma yok |
-| Müşteri uygunluk bilgisi vermedi, ek onay gerek | `escalated` |
+| Müşteri uygunluk bilgisi vermedi, ek onay gerek | `conversations.status = 'escalated'` |
 | Çakışan randevu tespit edildi | yeni kayıt oluşturma; alternatif sun |
 | Hizmet yok / yanlış aralık / saat dışı | uygun alternatif sun; kayıt oluşturma |
-| Duygusal/agresif/uygunsuz mesaj | `disqualified` veya `escalated` |
+| Duygusal/agresif/uygunsuz mesaj | `disqualified` veya `conversations.status = 'escalated'` |
 | Müşteri açıkça onay verdi | randevu `confirmed` |
 | Müşteri onay vermedi | geçici teklif olarak beklemede |
 
@@ -701,3 +707,56 @@ Kod yazımına geçmeden önce, bu gereksinimler doğrultusunda aşağıdaki ü�
 3. `escalations` ve `audit_log` kayıt şablonları
 
 Bunlar netleştiğinde sistem, hem gelişmiş lead qualification hem de doğrulanan randevu akışı için pratik olarak kodlanabilir hale gelir.
+
+---
+
+## 17) Gereksinim incelemesi — 22 Eylül 2026
+
+**Durum:** Bu belge henüz uygulanmış bir akış değildir. Aşağıdaki bulgular, üstteki
+ifadelerin birbirini tamamlamadığı noktaları kaydeder; çelişkili maddeler tek başına
+uygulama talimatı olarak kullanılmamalıdır. Mimari, kimlik eşleme, eşzamanlılık ve
+kişisel veri kararları AGENTS.md gereği Claude tarafından netleştirilmelidir.
+Bu incelemede veritabanı şeması veya webhook kodu değiştirilmedi.
+
+### 17.1. Çelişkiler ve açıklama notları
+
+| No | İlgili bölüm | Bulgu ve gerekli netleştirme |
+|---|---|---|
+| R01 | 1.2, 5.1, 11 | “Lead olarak işaretleme” ile lead satırı oluşturma farklıdır. Bilgi sorusu için `new` satırı tutulması, kişinin `qualified` olduğu anlamına gelmez. |
+| R02 | 2.2, 4 | 60 ve 80 olmak üzere farklı qualification eşikleri var; 50–59 da farklı yorumlanıyor. Tek eşik ve 29/30/49/50/59/60/79/80 sınırlarının sonuçları kararlaştırılmadan skor → status kodlanmamalı. |
+| R03 | 4 | Pozitif toplam 110, negatif toplam -75 olabilir; sonuç 0–100 ile sınırlandırılmalı. Aynı sinyalin tekrar mesajında yeniden toplanıp toplanmayacağı açıklanmamış. Öneri: konuşmanın güncel kanıtlarını yeniden değerlendir, sırf tekrar nedeniyle puan artırma. Tek cümle olmak tek başına belirsizlik değildir. |
+| R04 | 2.2, 2.3, 5.3 | Düşük skor/bilgi merakı bir yerde kapatma, diğerinde `new`. Bölüm 5.3 örnek 2 esas alınmalı: yalnız bilgi istemek ret gerekçesi değildir. Kıyaslama ve normal fiyat itirazı da tek başına spam değildir. |
+| R05 | 5.4, 8, 14.2, 15 | Eksik bilgi bir yerde doğrudan devir, diğerinde 1–2 soru gerektiriyor. İlk belirsizlikte eksik bilgiyi sor; 1–2 netleştirme turu sonrasında çözülemiyorsa insan desteğine yönlendir. Şikâyet/açık insan talebi bu beklemeyi gerektirmez. “Yüksek değerli görünmüyor” nesnel bir devir ölçütü değildir. |
+| R06 | 6.4–6.6, 10, 15 | `pending` ile `confirmed` eşanlamlı kullanılmamalı. Bekleyen teklif için kesin randevu sözü verilmez; açık onay, güncel uygunluk ve başarılı kayıt sonrası kesinleşme bildirilir. Teklifin satır olarak ne zaman tutulacağı ve süre aşımı Claude kararı gerektirir. |
+| R07 | 6.1, 6.5 | Bağlamsız “tamam” randevu onayı değildir. Onay tek, güncel, tam tarih/saat/hizmet içeren teklife bağlı olmalı. İki teklif, eski teklif, değişen fiyat veya hizmet varsa özetleyip yeniden onay istenmeli. Özel bir “son kararı veriyorum” cümlesi zorunlu değildir. |
+| R08 | 7.1, 7.4 | “Son onay kazanır, eskiyi iptal et” ile “yeni kayıt oluşturma” çelişiyor. Çakışma kendi başına eski randevuyu iptal yetkisi vermez. Aynı gün iki ayrı saat de zaman çakışmasıyla aynı şey değildir. İptal/değişiklik müşterinin ayrı talebi ve işletme politikasına bağlıdır. |
+| R09 | 7.2–7.3 | Çalışan/oda/ekipman kapasitesi, mola ve tampon süre kaynakları tanımlı değil. Bitiş = sonraki başlangıç durumunun tampon varsa/yoksa sonucu açıkça belirlenmeli. Bilinmeyen kapasiteyi “müsait” sayma. |
+| R10 | 6.4, 7 | Okuma sonrası iki eşzamanlı onayın aynı boşluğu alması çözülmemiş. Onay anında uygunluk yeniden doğrulanmalı; atomik rezervasyon yöntemi Claude tarafından belirlenmeli. Yalnız ön sorgu yarış koşulunu çözmez. |
+| R11 | 9.6 | Benzer metin aynı mesaj demek değildir. Gerçek teslimat tekrarı ile yeni kimlikli aynı metin ayrı test edilmeli. Kanal arası kullanıcı eşlemesi burada tanımlı değil; yalnız ad/metin benzerliğiyle kayıt birleştirilmemeli. Kimlik ve idempotency tasarımı Claude'a aittir. |
+| R12 | 11 | `converted` kişinin sonraki “merhaba” mesajıyla `new` olması veya iptal sonrası durumunun ne olacağı belirsiz. `converted` için randevu onayı mı, tamamlanma mı, satış mı gerektiği tek tanıma bağlanmalı. Funnel event yalnız ilgili geçiş gerçekten gerçekleştiğinde yazılmalı. |
+| R13 | 11–12 | Mevcut `appointments` yalnız lead, işletme, başlangıç ve status tutuyor; hizmet/süre/kaynak/teklif süresi alanları yok. `leads.conversation_id` benzersiz kısıt taşımıyor. Mevcut şema tek başına bu belgede istenen garantileri sağlamaz. Kalıcı veri tasarımı Claude değerlendirmesi gerektirir; bu belge uygulanabilirlik garantisi değildir. |
+| R14 | 8.3, 12 | `escalations` şemasında ayrı “not” alanı yok; `assigned_to` örneği sabit kişi olmamalı. `audit_log` detayları JSON payload'dır. Zorunlu/opsiyonel alanlar, kişisel veri minimizasyonu ve saklama politikası ayrıca belirlenmeli; eksik kimlikler uydurulmamalı. |
+
+### 17.2. Eksik uç durumlar ve beklenen davranış
+
+| No | Senaryo | Beklenen davranış / açık karar |
+|---|---|---|
+| R15 | “Yarın”, “bu salı”, saat dilimi, gece yarısı; 31 Şubat | İşletme saat dilimi ve sabit test saatiyle değerlendir; tam tarih/saatle teyit et. Geçersiz tarihi otomatik başka güne taşıma. Saat dilimi bilinmiyorsa kesinleştirme. |
+| R16 | Bugün geçmiş saat; tatil; mola; kapanışı aşan seans | Yalnız başlangıç değil tüm hizmet aralığı kontrol edilmeli. Özel tarih istisnası haftalık saatten öncelikli; yalnız doğrulanmış alternatif sunulmalı. |
+| R17 | İki hizmet, paket, arkadaş için ikinci randevu | Hizmetlerin sırası, süresi, kişi sayısı ve aynı anda mı ardışık mı istendiğini netleştir. Ayrı talepleri sessizce tek hizmete indirgeme. Paket/kapasite bilgisi eksikse insan desteği. |
+| R18 | Eksik/eski fiyat, süre, kısmi hizmet listesi, config okunamaması | Bilgi eksikliğini söyle; fiyat/süre/uygunluk uydurma. Kısmi listede bulunmamak kesin “sunulmuyor” kanıtı değildir. Liste tamlığı doğrulanmadan kesin ret verme. |
+| R19 | Onaydan önce vazgeçme, iptal, erteleme, gecikme, gelmeme | Mevcut kayıt/politika kontrol edilmeden iptal veya yeni saat sözü verme. `pending -> cancelled` olasılığı var; tamamlanmış/iptal edilmiş kaydı yeniden onaylama. Gelmeme için şemada ayrı status yok, politika kararı gerekli. |
+| R20 | Geç gelen onay, hizmet/fiyat değişimi, teklifin dolması | Eski onayı yeni koşullara uygulama. Güncel özeti ve uygunluğu kontrol et; gerekirse yeniden onay al. Teklif geçerlilik süresi henüz tanımlı değil. |
+| R21 | Veritabanı/uygunluk okuma veya kayıt hatası, yanıt teslim hatası | Başarısız/belirsiz kayıtta “kesinleşti” deme. Tekrar denemede ikinci randevu üretmeme ve müşteriye doğru durumun iletilmesi Claude tarafından tasarlanmalı. |
+| R22 | İnsan devrinden sonra yeni mesaj veya tekrar devir talebi | İnsan süreciyle çelişen otomatik randevu sözü verme. Devrin tekilleştirilmesi ve otomasyona dönüş koşulları açık karar olarak kalıyor. |
+| R23 | Sağlık uygunluğu, yaş kısıtı, garanti talebi | Yetkisiz sağlık değerlendirmesi veya sonuç garantisi verme; işletmenin doğrulanmış yönlendirme politikası ve insan desteğini kullan. |
+| R24 | Görsel/ses/boş mesaj, yazım hatası, birden fazla anlam | Desteklenmeyen içeriği anlaşılmış sayma; metinle açıklama iste. Açık niyetli yazım hatasını veya kısa mesajı otomatik düşük niyet sayma. |
+| R25 | Ek telefon vermeme, konuşmada konu/hizmet değiştirme | Mevcut kanal erişimi ile ek telefon ihtiyacını ayır; yalnız gerekli eksik bilgiyi sor. Önceki hizmeti yeni talebe sessizce taşıma. |
+| R26 | Spam, yanlış kanal, duygusal şikâyet, iletişim istememe | Spam ile meşru şikâyeti ayır. Şikâyeti satışa çevirmeye çalışma; iletişim istememe halinde yeni satış sorusu sorma. Bölüm 14.3'teki sonraki adım kuralı zorunlu satış sorusu değildir. |
+
+### 17.3. Doğrulama kapsamı
+
+Örnek müşteri mesajları `tests/fixtures/whatsapp-booking-*.json` dosyalarındadır.
+Ön koşullar ve kabul ölçütleri `tests/scenarios/booking-cases.json` içinde R01–R26
+notlarına bağlanır. Açık karar gerektiren testler kesin status veya puan uydurmaz.
+Fixture biçim testinin geçmesi lead/randevu motorunun uygulandığı anlamına gelmez.

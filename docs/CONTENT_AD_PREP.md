@@ -1,6 +1,8 @@
 # İçerik & Reklam Üretimi — Kapsamlı Hazırlık ve İş Akışı Rehberi
 
-Bu belge, projede tanımlanan içerik üretimi ve reklam üretim akışını mevcut veritabanı yapısı, proje kuralları ve iş hedeflerine göre çok daha derinlemesine açıklar. Amaç, sadece kısa bir özet değil; bir başka geliştiricinin ya da başka AI ajanın, bu işi kodlamaya başlarken elinde eksiksiz bir plan bulmasıdır.
+Bu belge, içerik fikrinden kampanya yayınına kadar geçen akışın nasıl çalışması gerektiğini açıklar: hangi bilgilerin toplanması gerektiği, her katmanın (görsel, seslendirme, altyazı, metin) nasıl üretileceği, insan onayının nerede devreye gireceği ve hangi hatalarda nasıl durdurulması gerektiği. Okuyucu burada hem iş akışını hem de güvenlik / kalite kontrol kurallarını birlikte görür.
+
+Kısacası bu belge, bir içerik parçasını "güzel görsel üretimi" olarak değil, doğru bilgi taşıyan, onaylanmış ve ölçülebilir bir reklam üretim süreci olarak düşünmek için gerekli tüm temelleri verir.
 
 Bu belge, aşağıdaki alanları bir arada ele alır:
 
@@ -13,6 +15,15 @@ Bu belge, aşağıdaki alanları bir arada ele alır:
 - sistemin "doğru içerik" üretmesini sağlayacak kontrol noktaları
 
 Bu belge, mevcut repo içindeki gerçek veri modeliyle uyumlu yazılmıştır. Yeni mimari karar eklenmez; sadece mevcut `content_items`, `content_layers`, `ad_campaigns`, `approvals`, `audit_log`, `funnel_events` yapısı ve proje yönergeleri düzenli bir şekilde açıklanır.
+
+Kritik uyumluluk ve güvenlik notları (özet):
+- Her içerik ve her içerik katmanı mutlaka `business_id` ile izlenmelidir; hiçbir içerik başka bir işletmenin scope'u altında çalışmayacak şekilde tasarlanmalıdır.
+- `approvals.action` yalnızca şema ile uyumlu değerleri kullanır: `approve`, `change`, `reject`. "request_review" gibi yeni actionlar şema değiştirmeden önce kullanılmamalıdır; bunun yerine `approvals.action = 'change'` ve açıklayıcı `notes` kullanılır.
+- Onay sonrası otomatik olarak "publish" / "campaign start" yapılmaz. Yayın ve kampanya başlatma, ayrı bir operasyonel adım ve `ad_campaigns` onayı gerektirir.
+- Müşteri kişisel verileri (farklı platformlara ait ham video içindeki konuşma, telefon numaraları görüntüsü vb.) üretim sırasında ve QC ekranlarında maskelenmeli veya özetlenmelidir. Destek ve hata raporlarında PII gösterilmemelidir.
+- `funnel_events` sadece migration ile tanımlanmış event tiplerini kullanır; `lead_score_updated` gibi operasyonel değişiklikler `audit_log` içinde izlenmelidir.
+- Asset (video/image/audio) yüklemeleri sırasında format, boyut veya telif ihlali gibi hatalar oluşabilir; bu hatalar QC aşamasında engellenmeli ve `audit_log` ile kaydedilmelidir.
+
 
 ---
 
@@ -526,32 +537,43 @@ Amaç: platforme uygun format ve tasarım.
 
 ## 10) İçerik üretiminde QC (quality control) ne olmalı?
 
-İçerik hazırlandıktan sonra kalite kontrolü yapılmalıdır. Burada üretimin üç düzeyli kontrolü vardır:
+İçerik hazırlandıktan sonra kalite kontrolü yapılmalıdır. Burada üretimin üç düzeyli kontrolü vardır ve her düzey hem otomatik kontrolleri hem insan QC adımlarını içermelidir.
 
-### 10.1. Teknik kalite kontrolü
+### 10.1. Teknik kalite kontrolü (otomatik + manuel)
 
-- video oynatılabiliyor mu?
-- görsel bozulmuş mu?
-- altyazı gözüktü mü?
-- ses net mi?
-- video boyutu platforma uygun mu?
+- video oynatılabiliyor mu? (otomatik oynatma testi)
+- görsel bozulmuş mu? (hash/byte-check ve görsel meta kontrolü)
+- altyazı gözüktü mü? (subtitle burn-in simulasyonu)
+- ses net mi? (ortalama SNR ve sessiz bölge tespiti)
+- video boyutu ve codec platforma uygun mu? (limit ve format kontrolleri)
+- asset URL erişilebilir mi?
+- CDN ve hosting metadata doğrulaması
+
+Teknik hatalarda `content_layers.status` `error_upload` veya `needs_fix` ile işaretlenmeli ve `audit_log` içinde `technical_qc_failed` event'i üretilmelidir.
 
 ### 10.2. İçerik doğruluk kontrolü
 
-- fiyat doğru mu?
-- hizmet adları doğru mu?
-- saat ve gün bilgileri doğru mu?
-- iletişim bilgileri doğru mu?
+- fiyat doğru mu? (`business_config` ile çapraz kontrol)
+- hizmet adları doğru mu? (`services` katalogu ile karşılaştırma)
+- saat ve gün bilgileri doğru mu? (`business_config.work_hours` ile doğrulama)
+- iletişim bilgileri doğru mu? (masked preview, telefon/URL kontrolü)
 - hiçbir “gereksiz, yanlış, uydurma” bilgi yok mu?
 
-### 10.3. Etik ve marka kontrolü
+Bu kontroller mümkünse otomatikleştirilmeli; otomatik tutarsızlık tespitinde insan onayı (Ayşe) gerekecek şekilde işaretleme yapılmalıdır.
+
+### 10.3. Etik, marka ve PII kontrolü
 
 - marka tonu uygun mu?
 - güvenli ve profesyonel mi?
 - reklama uygun değerler taşıyor mu?
 - kullanıcıları yanıltmıyor mu?
+- içerikte kişisel veri (adres, telefon, yüz görüntüsü vb.) var mı? Varsa gizlilik izinleri ve maskelenmiş mi?
 
-Yalnızca “gözü güzel” değil; “doğru, güvenilir ve niyetli” içerik üretimi gerekir.
+PII içeren asset'ler için QC şu adımları izlemelidir:
+- Eğer asset içinde tanımlanabilir yüz/numara/kimlik varsa, yayına çıkmadan önce izin doğrulaması yapılmalı.
+- Hata veya izin eksikliği durumunda içerik derhal `rejected` veya `quarantine` statüsüne alınmalı ve `audit_log` içine `pii_issue` kaydı düşürülmelidir.
+
+Yalnızca “gözü güzel” değil; “doğru, güvenilir, yasal ve niyetli” içerik üretimi gerekir. QC adımları ile ilgili tüm insan kararları `approvals` tablosuna, teknik olaylar `audit_log` ve `model_routing_log`'a kaydedilmelidir.
 
 ---
 

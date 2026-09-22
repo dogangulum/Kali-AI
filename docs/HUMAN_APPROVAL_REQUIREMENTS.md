@@ -1,95 +1,138 @@
 # İnsan Onay Akışı — Gereksinimler (Onayla / Değiştir / Reddet)
 
-Bu belge, CLAUDE.md ve docs/PROJECT_HANDOFF.md dosyalarında tanımlanan "İnsan Onay Akışı" (Onayla / Değiştir / Reddet) gereksinimlerini, proje dosyalarındaki mevcut veri modellerine bağlı kalarak net ve uygulanmaya hazır biçimde sıralar. Yeni mimari kararlar eklenmez — sadece mevcut açıklamalar düzenlenir.
+Bu belge, mevcut repo içindeki veri modeli ile tutarlı şekilde insan onay akışını tanımlar. Yeni bir teknoloji ya da yeni bir tablo tasarımı eklenmez; mevcut şema ve iş kuralları içinde net, uygulanabilir adımlar yazılır.
 
 Amaç
-- İçerik üretim hattında insan onayını sistematik hale getirmek: insan onayı olmadan bir içerik katmanının (visual / voiceover / subtitle) yayımlanmaması.
-- Her onay veya değişiklik isteğinin izlenebilir, denetlenebilir ve geriye dönük incelenebilir olması.
-- İlk insan onayı sahibi: Ayşe (belgelerde adı geçen onaycı). Onaycı listesi konfigüre edilebilir olmalı, fakat bu belge sadece süreç ve gösterilecek bilgileri tanımlar.
+- İçerik üretim hattında bir katmanın / içeriğin yayımlanma öncesi insan onayı şartını güvenli şekilde kurmak.
+- Her eylemin izlenebilir, denetlenebilir ve geriye dönük incelenebilir olmasını sağlamak.
+- İlk insan onayı sahibi olarak Ayşe kullanılacaktır; bu kişi konfigüre edilebilir ama süreç aynı kalır.
 
-İlgili veritabanı tabloları (projede zaten var)
-- content_items (master içerik kaydı: topic, content_type, status)
-- content_layers (layer_type: visual/voiceover/subtitle, version, asset_url, status)
-- approvals (target_type, target_id, action ∈ {approve, change, reject}, notes, actor, created_at)
-- audit_log (opsiyonel olarak önemli olayların kaydı)
+Schema uyumluluğu ve kritik notlar
+- `approvals.action` alanı mevcut şema ile sınırlıdır: `approve`, `change`, `reject`.
+- `approvals.target_type` alanı mevcut şema ile sınırlıdır: `content_item`, `content_layer`, `ad_campaign`.
+- `content_items.status` için mevcut değerler: `draft`, `researching`, `generating`, `ready_for_review`, `approved`, `published`.
+- `content_layers.status` için mevcut değerler: `pending`, `generating`, `ready`, `approved`, `rejected`.
+- Bu nedenle "review requested" gibi ayrı bir eylem tipi veya `needs_change` / `pending_change` gibi status değeri eklenmez; değişiklik talebi kayıt için `approvals.action = 'change'` ve açıklayıcı `notes` kullanılır.
+- Değişiklik istenen katman için üretim yeniden başlatılır; `content_layers.version` arttırılır ve yeni satır / yeni sürüm oluşturulur. Bu durum, `status` olarak ayrı bir yeni state yaratmak yerine `pending` veya `generating` ile işaretlenir.
+
+İlgili veritabanı tabloları
+- `content_items`
+- `content_layers`
+- `approvals`
+- `audit_log`
+- `ad_campaigns` (varsa kampanya bağlamı)
 
 Ne zaman devreye girmeli
-1. Otomatik üretim tamamlandığında: bir content_layer üretimi tamamlandığında (ör. status = 'ready' veya 'ready_for_review'), onay akışı tetiklenmelidir.
-2. İnsan tarafından manuel başlatıldığında: üretim tamamlanmadan da onay isteği başlatılabilir (ör. taslak görüntüleme), ancak yayımlama öncesi zorunlu kabul edilen adım yine onaydır.
-3. Yeniden üretim ("Değiştir" isteği) tamamlandığında: yeni versiyon yüklendiğinde onay akışı yeniden tetiklenir.
+1. İçerik katmanı üretimi tamamlandığında:
+   - `content_layers.status` = `ready`
+   - veya `content_items.status` = `ready_for_review`
+2. İnsan tarafından manuel olarak onay isteği başlatıldığında:
+   - üretimin tamamlanması gerekmez; ancak yayımlama öncesi zorunlu onay adımı yine vardır.
+3. Değişiklik talebi sonrası yeni sürüm hazır olduğunda:
+   - yeni `content_layers.version` kullanılır ve tekrar review kuyruğuna girer.
 
-Hangi adımlar izlenmelidir (adet adım şeklinde)
-1. Üretim tamamlanır ve content_layer.status = 'ready' veya content_item.status = 'ready_for_review' set edilir.
-2. Sistem otomatik olarak (ve/veya üretici araç tarafından) approvals tablosuna bir "review requested" (action = 'change' veya özel bir request-review tipi) kaydı ekleyebilir; en azından bir review event loglanmalıdır.
-3. Atama / bildirim: ilgili onaycı(lar) (ilk etapta Ayşe) bilgilendirilir. Bildirim kanalı konfigüre edilebilir (e-posta / yönetim paneli/Telegram) — burada bildirim gereksinimi belirtilir, somut kanal uygulaması implementasyona bırakılır.
-4. Onay ekranı gösterimi: onaycı içerik katmanını inceler (aşağıdaki “Gösterilmesi gereken bilgiler” bölümüne bakınız).
-5. Onaycı bir eylem seçer:
-   - Onayla (Approve)
-   - Değişiklik isteği (Request Change / Değiştir)
-   - Reddet (Reject)
-6. Sistem onayı işler:
-   - approvals tablosuna bir satır eklenir: target_type ('content_item' veya 'content_layer'), target_id, action ('approve'|'change'|'reject'), notes (freeform), actor (onaycı adı/id), created_at.
-   - İçeriğin durumu güncellenir:
-     - Approve: content_layer.status -> 'ready' / content_item.status -> 'approved' (iş akışına göre) ve yayın adımına (ad_campaigns oluşturma / publish) hazır olarak işaretlenir.
-     - Change: content_layer.status -> 'needs_change' veya 'pending_change'; notes içinde değişiklik yönergeleri saklanır; sistem ilgili üretim pipeline'ı tetikleyebilir.
-     - Reject: content_layer.status -> 'rejected' ve content_item.status uygun şekilde set edilir; sebep notes içinde saklanır.
-   - audit_log içine bir kayıt yazılmalı (event_type = 'approval', payload = { target, action, actor, notes }).
-7. Değişiklik istendiğinde: üretim takımına (otomatik model veya insan üretici) net yönergeler iletilir; yeni versiyon yüklendiğinde (content_layers.version ++), adım 1'e geri dönülür.
+Tam akış
+1. Üretim tamamlanır ve içerik / layer hazır hale gelir.
+2. Sistem, ilgili hedefe göre bir review task oluşturur.
+   - review task, `approvals` tablosuna doğrudan `action = 'change'` ile istek kaydı olarak yazılabilir; ayrı bir `request_review` tipi yoktur.
+   - Minimum tanım: `target_type`, `target_id`, `action = 'change'`, `notes = 'Review requested'` veya daha açıklayıcı açıklama.
+3. Ayşe veya atanmış onaycı bilgilendirilir.
+   - Bildirim kanalı uygulamaya bırakılır; gereklilik sadece "onay için queue / notification" olmasıdır.
+4. Onay ekranı gösterilir.
+   - Eğer çoklu katman varsa, her katman ayrı ayrı önizlenir; bir katman tek tek incelenebilir.
+5. Onaycı eylem seçer:
+   - `approve`
+   - `change`
+   - `reject`
+6. Sistem eylemi işler:
+   - `approvals` tablosuna kayıt eklenir.
+   - `audit_log` içine önemli olay kaydı yazılır.
+   - Durum güncellemesi yapılır:
+    - `approve`: `content_layer.status = 'approved'` ve/veya `content_item.status = 'approved'`; yayın adımı için hazır bileşenler işaretlenir.
+    - `change`: ilgili katman için yeniden üretim başlatılır; `content_layer.status` `pending` veya `generating` olarak güncellenir; `notes` içinde net değişiklik talebi yazılır. `content_item.status` `generating` veya `draft` gibi geri dönüş durumlarına çekilebilir.
+    - `reject`: `content_layer.status = 'rejected'`; `content_item.status` uygun şekilde `draft` veya `researching` olarak düzenlenebilir; sebep `notes` içinde saklanır.
+7. Değişiklik talebi sonrası yeni sürüm eklenir.
+   - `content_layers.version` artırılır.
+   - yeni önizleme hazır hale gelir.
+   - review akışı yeniden başlar.
 
-Gösterilmesi gereken bilgiler (onay ekranı)
-- Content item seviyesi
-  - Başlık / konu (content_items.topic)
-  - İçerik türü (reel, image, text) ve hedef kampanya (varsa ad_campaigns bilgisi)
-  - İşletme kimliği / KALI_BUSINESS_ID (kimin için üretildiği)
-  - Oluşturulma zamanı ve üretim notları
-- Content layer seviyesi (her bir katman ayrı gösterilmeli)
-  - Katman türü (visual / voiceover / subtitle)
-  - Versiyon numarası
-  - Önizleme bağlantısı (asset_url) — görsel/video thumbnail, audio oynatıcı, altyazı metni
-  - Oluşturan (model veya insan), otomatik üretilme zamanı
-  - İlgili üretim parametreleri / prompt metni (kopya veya özet)
-  - Son değişiklik/diff özet (varsa)
-- Kampanya / yayım bilgisi (eğer content_item ad_campaigns ile ilişkilendirildiyse)
-  - Hedef kitle kısa bilgisi, bütçe/plan (özet)
+Önizleme ve onay ekranında gösterilmesi gereken bilgiler
+- İçerik düzeyi
+  - `content_items.topic`
+  - `content_items.content_type`
+  - bağlantılı `ad_campaign_id` varsa kampanya bağlamı
+  - `business_id` / iş yeri kapsamı
+  - üretim zamanı ve son güncelleme
+- Katman düzeyi
+  - `layer_type`
+  - `version`
+  - `asset_url`
+  - kısa önizleme (thumbnail / oynatıcı / metin)
+  - üretim prompt veya özet açıklama
+  - önceki sürüm ile fark özetine dair notlar (varsa)
 - Önceki onay geçmişi
-  - approvals tablosundan önceki eylemler: kim, ne zaman, notlar
-- Net yapılacak eylemler için butonlar ve kısa uyarı metinleri
-  - Approve (Onayla): "Bu içerik yayımlansın / kampanyada kullanılsın"
-  - Request Change (Değiştir): kısa not alanı (zorunlu) + hangi katmana değişiklik gerektiği seçeneği
-  - Reject (Reddet): zorunlu sebep alanı
+  - `approvals` tablosundaki önceki eylemler
+  - kim ne zaman ne yaptı, işlenmiş notlar
+- Net eylem butonları
+  - Onayla
+  - Değiştir
+  - Reddet
 
 Kayıt / izlenebilirlik gereksinimleri
-- Her onay eylemi approvals tablosuna yazılmalı (target_type, target_id, action, notes, actor, created_at).
-- Önemli olaylar audit_log içine de yazılmalı (event_type, payload JSON, created_at) — böylece opsiyonel olarak dış denetim yapılabilir.
-- RLS politikaları nedeniyle uygulama sunucusu, uygun service-role veya yetkili kimlik ile bu güncellemeleri yapmalıdır.
+- Her onay eylemi `approvals` tablosuna yazılmalı.
+- `actor` alanı güvenli şekilde kullanıcı kimliği / kısa ad / e-posta gibi tanımlı bir değer olmalı.
+- `notes` alanı gerekirse değişiklik isteklerini veya nedenleri açıkça açıklamalı.
+- `audit_log` içine önemli olaylar kaydedilmeli; örnek `event_type` değerleri: `approval_requested`, `approval_approved`, `approval_changed`, `approval_rejected`, `content_review_started`.
+- `audit_log.payload` JSON içinde en az şunlar bulunmalı:
+  - `business_id`
+  - `target_type`
+  - `target_id`
+  - `action`
+  - `actor`
+  - `notes`
+  - `content_item_id` varsa
+- Bu akış, `RLS` ve yetkilendirme sınırları içinde çalışmalıdır; uygulama katmanı uygun service role veya yetkili kullanıcı kimliği ile güncelleme yapmalıdır.
 
-İş kuralları / istisnalar
-- Onay insanı yoksa (Ayşe ulaşılmazsa) onay bekleyen öğeler queue içinde beklemeli; acil durumlar için ikinci dereceden onaycı konfigüre edilebilmeli (implementasyona bırakılır).
-- Onay verildikten sonra içerik **otomatik** olarak canlı hesapta yayımlanmamalıdır; manuel kampanya başlatma veya ayrı bir deployment adımı gerektirir. (CLAUDE.md içindeki “production reklam kampanyalarına dokunma” kuralı hatırlanmalıdır.)
-- Onay/Değiştir akışları idempotent olmalı: aynı eylem tekrarlanırsa çift kayıt veya çifte yayın önlenmeli.
-- Versiyon yönetimi: her yeni üretim sürümünde content_layers.version artırılmalı; approvals sadece ilgili versiyonla ilişkilendirilmeli.
-- Değişiklik talepleri açık, eyleme geçirilebilir ve spesifik olmalıdır (ör. "görselin arka planı daha açık olsun; yazı fontu değişsin; seslendirme daha hızlı konuşsun").
+Gerekli iş kuralları ve eksik senaryolar
+1. Ayşe cevap vermezse
+   - öğe `pending approval` listesinde kalır.
+   - belirli bir SLA aşımı varsa ikinci bir onaycı veya insan temsilciye düşürme mekanizması devreye girebilir.
+   - bu durum otomatik olarak `approved` veya `published` yapılmaz; sistem güvenli şekilde bekleme modunda kalır.
+2. Aynı anda iki içerik onay beklerse
+   - her kayıt ayrı ayrı bir `approvals` row'u olarak işlenir.
+   - öncelik, yaratılma zamanı, aciliyet veya iş hedefi üzerinden verilir.
+   - aynı anda çoklu review ekranı açık olabilir; ancak tek bir hakkı da geçerli userdata olarak işlenmelidir.
+3. Aynı eylem tekrar tekrar gönderilirse
+   - işlem idempotent olmalı.
+   - aynı `target_id`, aynı `action` ve aynı `actor` için tekrar ekleme yapılmamalı. Zaten açık olan review taleplerine ikinci kez aynı karar eklenmemeli.
+4. Değişiklik talebinde netlik yoksa
+   - `notes` alanı zorunlu olmalı.
+   - "daha iyi olsun" gibi belirsiz notlar kabul edilmemeli; anlatım şunları içermeli: hangi katman, hangi sorun, ne değişmeli.
+5. Reddet veya değişiklik kararı sonrası üretim durdurulmalıdır
+   - `reject` sonrası otomatik yayın yapılmaz.
+   - `change` sonrası yeni üretim için gerekli prompt / notlar saklanır.
 
-Kullanıcı deneyimi / uyarılar (kısa)
-- Onay ekranı, hızlı önizleme (thumbnail, kısa oynatıcı) + tam dosyaya erişim sağlamalı.
-- Not alanları sınırlı uzunlukta olmalı ama açıklayıcı metin kabul etmeli.
-- Onaycı, atamayı veya soruyu başkalarına devretme (reassign) seçeneğine sahip olmalı — yine implementasyona bırakılan detay.
+Kullanıcı deneyimi / uyarılar
+- Onay ekranı, hızlı önizleme ve kısa açıklamayı birlikte göstermelidir.
+- Not alanı kısa ama net olmalıdır; belirsiz terimler kullanılmamalıdır.
+- Onaycı bir akışı başkasına devretme seçeneğine sahip olabilir ama bu yalnızca ekran düzeyindeki UX detayıdır; veri modeli aynı kalır.
 
-Güvenlik ve uyumluluk
-- Hiçbir onay veya onay sonrası eylem, CLAUDE.md’deki kritik uyarıları çiğnememeli (ör. mevcut reklam hesabına zarar verme vs.).
-- Onaycı kimliği approvals.actor alanında güvenli şekilde tutulmalı (kullanıcı ID, e-posta veya sistemde tanımlı kısa ad).
-- Onay işlemine dair loglar gizlilik gereksinimlerine uygun saklanmalı.
+Güvenlik, uyumluluk ve gizlilik
+- Hiçbir onay/uygulama adımı CLAUDE.md’deki kritik uyarıları bozmaz.
+- `approvals.actor` kaydı kişisel veri olarak değil, güvenli bir kullanıcı kimliği / kullanıcı adı olarak tutulur.
+- İçerik önizleme veya loglarda müşteri içeriği ve özel veriler doğrudan görünmemelidir; gerekirse maskelenmiş / özetlenmiş gösterim kullanılır.
 
 Raporlama / takip
-- Onay bekleyen öğeler için bir "Pending approvals" görünümü olmalı (kimin onay beklediğini, ne kadar zamandır beklediğini gösterir).
-- approvals tablosu üzerinden raporlar üretilebilmeli (onay süresi, reddedilme oranı, yeniden üretim sayısı).
-
-Not — kod durumu
-- Bu belge, yalnızca gereksinim ve iş akışını tanımlar. Sistemde ilgili tablolar (content_items, content_layers, approvals, audit_log) mevcut; ancak bu akışın uygulama katmanında tam bir implementasyonu (UI, bildirim, reassign, yayın adımı) kodlanmamıştır.
+- `Pending approvals` görünümü olmalı.
+- approvals tablosu üzerinden rapor üretilebilmeli:
+  - ortalama onay süresi
+  - reddetme oranı
+  - yeniden üretim sayısı
+  - en çok değiştirilen katmanlar
 
 Kısa özet
-- Onay akışı: üretim → review request → Ayşe (ve/veya atanan onaycı) inceleme → Approve / Request Change / Reject → approvals + audit_log kaydı → içerik durum güncellemesi → (gerektiğinde) yeniden üretim ve tekrar review.
-- Gösterilecek temel bilgiler: preview (asset_url), versiyon, üretim prompt/metin, kampanya hedefi, önceki onay geçmişi, değişiklik notları.
-- Güvenlik: onaylar RLS ve audit ile korunmalı; canlı hesaplara direkt otomatik değişiklik yapılmamalıdır.
+- Onay akışı: üretim tamamlandı → review task oluşturuldu → Ayşe değerlendirir → `approve` / `change` / `reject` → approvals ve audit_log yazılır → içerik durumu güncellenir → gerekiyorsa yeni sürüm üretimi başlatılır.
+- Yalnızca arayüzde "Önizleme / Bildirim / Karar" olmakla kalmaz; her işlem veri modelinde de açık şekilde audit edilebilir olmalıdır.
+- Bu süreçte asla otomatik yayın yapılmaz; yayın, ayrı bir adım olarak yönetilir.
 
-Bu gereksinim belgesi, CLAUDE.md ve PROJECT_HANDOFF.md içinde belirtilen insan onayı maddelerini düzenli, uygulanabilir bir adım setine dönüştürür. Kodlama veya yeni teknoloji kararı içermez; uygulamaya geçmeden önce onaycı(lar) ile süreç ve bildirim kanalını netleştirmek önerilir.
+Bu gereksinim belgesi, mevcut veritabanı şeması ve proje kurallarıyla tutarlı biçimde insan onay akışını tanımlar. Kod yazma amacı yoktur; amaç, uygulamaya geçmeden önce herkesin aynı süreç ve veri modelini görmesi ve aynı sonuca ulaşmasıdır.

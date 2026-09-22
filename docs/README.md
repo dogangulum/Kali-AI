@@ -31,49 +31,104 @@ Bu klasör, projenin mevcut durumunu, çalışma mantığını, taşınma hazır
 
 ### 5) SCRIPTS.md
 - Ne işe yarar: `scripts/` klasöründeki yardımcı araçların ne işe yaradığını ve nasıl çalıştırılacağını özetler.
-- Ne zaman bakılmalı: yerel test, webhook doğrulama, env kontrolü veya sahte dry-run senaryolarını çalıştırmak istediğinizde.
-- Kısa özet: `check-env`, `check-webhooks`, `run-local-tests`, `simulate-webhook` ve yeni `dry-run.cjs` araçları için kullanım örnekleri ve amaçları yer alır.
+- Ne zaman bakılmalı: yerel test, webhook doğrulama, env kontrolü, canlı izleme veya sahte dry-run senaryolarını çalıştırmak istediğinizde.
+- Kısa özet: `check-env`, `check-webhooks`, `run-local-tests`, `simulate-webhook`, `dry-run.cjs` ve `live-monitor.cjs` araçları için kullanım örnekleri ve amaçları yer alır.
 
-### 6) KALI_BUSINESS_INFO_TEMPLATE.md
+### 6) DEVELOPMENT_START_GUIDE.md
+- Ne işe yarar: Geliştirme öncesi okuma sırasını, veri tabanı eşlemelerini ve fonksiyon isim önerilerini tek bir yerden anlatır.
+- Ne zaman bakılmalı: kodlamaya başlamak için hangi dosyadan başlanacağını netleştirmek istediğinizde.
+- Kısa özet: akış bazlı okuma sırası, tablo eşlemeleri, işlev isimleri ve mevcut testlerin nasıl çalıştırılacağı yer alır.
+
+### 7) KALI_BUSINESS_INFO_TEMPLATE.md
 - Ne işe yarar: İşletmenin gerçek hizmet, fiyat, çalışma saatleri, tonu ve karşılama mesajı gibi bilgilerini toplamaya yarayan boş şablon.
 - Ne zaman bakılmalı: sistemin gerçekten çalışması için ilk işletme profili hazırlık aşamasında.
 - Kısa özet: Ayşe'nin dolduracağı baştan sona iş bilgisi formu, neden gerekli olduğu açıklaması ve kontrol listesi içerir.
 
-### 7) LEAD_QUALIFICATION_AND_BOOKING_REQUIREMENTS.md
+### 8) BUSINESS_INFO_ACCEPTANCE_TESTS.md
+- Ne işe yarar: İşletme bilgi formu ve içerik üretiminde kullanılacak işletme verilerinin doğruluğunu kontrol eden kabul testlerini ve fixture örneklerini içerir.
+- Ne zaman bakılmalı: yeni bir işletme profili girildiğinde veya `dry-run`/CI testleri çalıştırılmadan önce doğrulama gerektiğinde.
+- Kısa özet: zorunlu alanlar, sınır koşulları, örnek veri setleri ve başarısızlık durumunda izlenecek düzeltme adımları.
+
+### 9) LEAD_QUALIFICATION_AND_BOOKING_REQUIREMENTS.md
 - Ne işe yarar: Gelen mesajın ciddi lead olup olmadığına karar verme ve randevu akışının gereksinimlerini detaylı anlatır.
 - Ne zaman bakılmalı: lead scoring, niyet analizi, randevu uygunluk kontrolü ve otomatik/insan devri kararı planlanırken.
 - Kısa özet: müşteri niyeti, kriterler, puanlama, randevu onayı, çakışma ve insan devri kuralları yer alır.
 
-### 8) HUMAN_ESCALATION_ANALYTICS_COST_CONTROL_REQUIREMENTS.md
+### 10) HUMAN_ESCALATION_ANALYTICS_COST_CONTROL_REQUIREMENTS.md
 - Ne işe yarar: İnsan devri, analiz/takip ve model maliyet kontrolünü tek belgede açıklar.
 - Ne zaman bakılmalı: Ayşe'ye devredilecek durumlar, funnel takibi veya model seçimi iş akışı planlanırken.
 - Kısa özet: escalation koşulları, audit/funnel event yapısı, model routing ve maliyet izleme kuralları yer alır.
 
-### 9) HUMAN_APPROVAL_REQUIREMENTS.md
+### 11) HUMAN_APPROVAL_REQUIREMENTS.md
 - Ne işe yarar: İçerik ve kampanya için Onayla / Değiştir / Reddet akışını tanımlar.
 - Ne zaman bakılmalı: üretim katmanı, içerik onayı ve insan denetimi planlanırken.
 - Kısa özet: approvals, audit log, versiyon yönetimi ve onay ekranı gereksinimleri yer alır.
 
-### 10) CONTENT_AD_PREP.md
+### 12) HUMAN_APPROVAL_ESCALATION_EDGE_CASES.md
+- Ne işe yarar: Onay ve insana devretme akışındaki uç durum senaryolarını gerçek örneklerle listeler ve her durumda beklenen sistem davranışını açıklar.
+- Ne zaman bakılmalı: approval/escalation mantığı kodlanırken, SLA ve alarm kuralları belirlenirken.
+- Kısa özet: gecikmeler, çakışan onay istekleri, onaycı yoksa ne yapılacağı, audit_log kayıtları ve önerilen çözüm yolları.
+
+### 13) HUMAN_APPROVAL_ESCALATION_UI_DRAFT.md
+- Ne işe yarar: Onay ve insana aktarım akışlarının hangi ekranlarda nasıl görüneceğine dair basit UI taslakları ve bildirim metinleri sağlar.
+- Ne zaman bakılmalı: frontend implementasyonu, bildirim tasarımı ve kullanıcı rolleri belirlenirken.
+- Kısa özet: dashboard, approval modal, SLA uyarıları, hızlı onay/assign akışları ve mobil bildirim örnekleri.
+
+### 14) CONTENT_AD_PREP.md
 - Ne işe yarar: İçerik üretimi, video/görsel/seslendirme/altyazı ve reklam kampanyası için detaylı hazırlık akışını anlatır.
 - Ne zaman bakılmalı: içeriğe başlanacağında, brief oluşturulurken ve yayın öncesi üretim planı hazırlanırken.
 - Kısa özet: brief, katman üretimi, QC, onay, kampanya ve performans takibi yer alır.
 
-### 11) SHARE_CHECKLIST.md
+### 15) CONTENT_AD_PREP_EDGE_CASES.md
+- Ne işe yarar: İçerik üretimi akışındaki sürpriz ve hata senaryolarını örneklerle gösterir.
+- Ne zaman bakılmalı: üretim katmanları kodlanırken ve onay/retry kararları belirlenirken.
+- Kısa özet: yeniden üretim, reddetme, ek açıklama, hatalı brief ve yayın öncesi doğrulama davranışları yer alır.
+
+### 16) CONTENT_AD_UI_DRAFT.md
+- Ne işe yarar: İçerik ve reklam üretimi akışının kullanıcı arayüzü örneklerini gösterir.
+- Ne zaman bakılmalı: onay ekranı, önizleme ve görev listesi tasarımı planlanırken.
+- Kısa özet: taslak ekranlar, edit/replace akışları ve bildirim örnekleri içerir.
+
+### 17) IMPLEMENTATION_PRIORITY_PLAN.md
+- Ne işe yarar: Hangi iş akışının önce, hangisinin sonra kodlanması gerektiğini bağımlılık mantığıyla anlatan öncelik planı.
+- Ne zaman bakılmalı: görevleri sıralarken, kod başlatma öncesi ve üretim planı oluşturulurken.
+- Kısa özet: business_config ve temel müşteri akışı öncelikli; ardından escalation, tracking, model routing, approval ve içerik/reklam üretimi gelir.
+
+### 18) TEST_SENARYOLARI.md
+- Ne işe yarar: Uçtan uca müşteri benzeri test senaryolarını listeler.
+- Ne zaman bakılmalı: sistemin konuşma davranışını ve randevu akışını canlı benzeri şekilde kontrol ederken.
+- Kısa özet: bilgi, itiraz, randevu, insan devri ve hatalı karakter girişini kapsayan senaryolar vardır.
+
+### 19) TEST_KAPSAM_RAPORU.md
+- Ne işe yarar: Test kapsamı, açıklar ve mevcut kanıtları özetleyen denetim raporu.
+- Ne zaman bakılmalı: test durumu ve açıklar kontrol edilecekse.
+
+### 20) LOG_REPORT.md
+- Ne işe yarar: Raporlama ara yüzü için örnek log çıktıları ve metrik analiz akışını anlatır.
+- Ne zaman bakılmalı: model maliyet, funnel, audit ve operasyonel metrikleri izlemek istediğinizde.
+- Kısa özet: raporlama formatı, tarih filtresi, bütçe uyarısı ve senaryo modu kullanımı yer alır.
+
+### 21) ALL_SCENARIOS.md
+- Ne işe yarar: Proje için hazırlanmış tüm örnek senaryoların tek bir katalogudur.
+- Ne zaman bakılmalı: davranış testi, örnek konuşma listesi veya gerçek müşteri benzeri akışı doğrulamak istediğinizde.
+- Kısa özet: kanal bazlı, iş akışı bazlı ve hata senaryoları içeren geniş örnek seti bulunur.
+
+### 22) TROUBLESHOOTING_GUIDE.md
+- Ne işe yarar: Canlı test ve çalıştırma sırasında ortaya çıkabilecek sorunların nedenlerini ve adım adım çözümlerini anlatır.
+- Ne zaman bakılmalı: webhook 500, yanlış işletme verisi, kayıt tekrarı, AI yanıtı gelmemesi veya denetim sorunu yaşadığınızda.
+- Kısa özet: sorun tanımlama, kontrol listesi, hızlı çözüm ve güvenlik önlemleri yer alır.
+
+### 23) SHARE_CHECKLIST.md
 - Ne işe yarar: Paylaşım öncesi gizli bilgi, canlı veri ve üretim bilgilerinin dışarı çıkmasını engelleme kontrol listesi.
 - Ne zaman bakılmalı: GitHub / repo paylaşımı, başka ekip veya ajana açma ve güvenlik ön kontrolünde.
 
-### 12) SOZLUK.md
+### 24) SOZLUK.md
 - Ne işe yarar: Teknik terimleri sade dille açıklayan sözlük/SSS.
 - Ne zaman bakılmalı: yeni kişi projeyi anlamaya başlarken ya da teknik terimlere takıldığında.
 
-### 13) ACILIS_HAZIRLIK.md
+### 25) ACILIS_HAZIRLIK.md
 - Ne işe yarar: Açılış öncesi hazırlık, yerel kontrol ve canlı açılış için sorumluluk ve güvenlik listesi.
 - Ne zaman bakılmalı: canlı ortam/taşıma öncesi ve geri alma planı hazırlanırken.
-
-### 14) TEST_KAPSAM_RAPORU.md
-- Ne işe yarar: Test kapsamı, açıklar ve mevcut kanıtları özetleyen denetim raporu.
-- Ne zaman bakılmalı: test durumu ve açıklar kontrol edilecekse.
 
 ## Hızlı önerilen sıralama
 
@@ -81,36 +136,48 @@ Yeni bir kişi projeye giriyorsa önerilen sırayla bakması:
 1. START_HERE.md
 2. PROJECT_HANDOFF.md
 3. SYSTEM_FLOW.md
-4. LOCAL_TESTS.md
-5. SCRIPTS.md
-6. KALI_BUSINESS_INFO_TEMPLATE.md
-7. LEAD_QUALIFICATION_AND_BOOKING_REQUIREMENTS.md
-8. HUMAN_ESCALATION_ANALYTICS_COST_CONTROL_REQUIREMENTS.md
-9. HUMAN_APPROVAL_REQUIREMENTS.md
-10. CONTENT_AD_PREP.md
-11. ORACLE_CLOUD_DEPLOYMENT_PREP.md
-12. SHARE_CHECKLIST.md
-13. SOZLUK.md
-14. ACILIS_HAZIRLIK.md
+4. DEVELOPMENT_START_GUIDE.md
+5. LOCAL_TESTS.md
+6. SCRIPTS.md
+7. KALI_BUSINESS_INFO_TEMPLATE.md
+8. BUSINESS_INFO_ACCEPTANCE_TESTS.md
+9. IMPLEMENTATION_PRIORITY_PLAN.md
+10. LEAD_QUALIFICATION_AND_BOOKING_REQUIREMENTS.md
+11. HUMAN_ESCALATION_ANALYTICS_COST_CONTROL_REQUIREMENTS.md
+12. HUMAN_APPROVAL_REQUIREMENTS.md
+13. CONTENT_AD_PREP.md
+14. ORACLE_CLOUD_DEPLOYMENT_PREP.md
+15. TROUBLESHOOTING_GUIDE.md
+16. SHARE_CHECKLIST.md
+17. SOZLUK.md
+18. ACILIS_HAZIRLIK.md
 
-Bu sıralama, önce bağlam ve gerçek durum, sonra işleyiş, ardından işletme bilgisi ve iş akışları, en son taşıma ve güvenlik ayrıntıları mantığını takip eder.
+Canlı test sırasında en son mesaj ve model kararı izlemek için `npm run monitor:live` komutunu `SCRIPTS.md` üzerinden çalıştırabilirsiniz.
+
+Bu sıralama, önce bağlam ve gerçek durum, sonra veri modeli ve işleyiş, ardından işletme bilgisi, öncelik planı, iş akışları ve en son taşıma, güvenlik ve sorumluluk ayrıntıları mantığını takip eder.
 
 ## Kısa karar rehberi
 
 - "Projeyi nasıl anlamaya başlarım?" -> START_HERE.md
-- "Proje neden böyle kurulmuş?" -> PROJECT_HANDOFF.md
+- "Proje neden böyle kuruldu?" -> PROJECT_HANDOFF.md
 - "Bir mesaj geldiğinde ne oluyor?" -> SYSTEM_FLOW.md
+- "Geliştirmeye nereden başlamalıyım?" -> DEVELOPMENT_START_GUIDE.md
 - "Lokal olarak testi nasıl çalıştırırım?" -> LOCAL_TESTS.md
 - "Script'ler ne işe yarıyor, hangi komutu kullanırım?" -> SCRIPTS.md
 - "İşletme bilgileri nasıl doldurulur?" -> KALI_BUSINESS_INFO_TEMPLATE.md
+- "İşletme bilgisi doğru mu?" -> BUSINESS_INFO_ACCEPTANCE_TESTS.md
+- "Hangisi önce kodlanmalı?" -> IMPLEMENTATION_PRIORITY_PLAN.md
 - "Lead qualification ve randevu akışı nasıl olmalı?" -> LEAD_QUALIFICATION_AND_BOOKING_REQUIREMENTS.md
 - "İnsan devri, takip ve maliyet kontrolü nasıl yapılmalı?" -> HUMAN_ESCALATION_ANALYTICS_COST_CONTROL_REQUIREMENTS.md
 - "İnsan onayı nasıl olmalı?" -> HUMAN_APPROVAL_REQUIREMENTS.md
 - "İçerik ve reklam üretimi için ne gerekli?" -> CONTENT_AD_PREP.md
+- "Uç durumlar nasıl kontrol edilir?" -> HUMAN_APPROVAL_ESCALATION_EDGE_CASES.md / CONTENT_AD_PREP_EDGE_CASES.md
 - "Yarın Oracle Cloud'a taşıma için ne gerekli?" -> ORACLE_CLOUD_DEPLOYMENT_PREP.md
+- "Sorun yaşarsam ne bakmalıyım?" -> TROUBLESHOOTING_GUIDE.md
 - "Paylaşım öncesi ne kontrol edilir?" -> SHARE_CHECKLIST.md
 - "Teknik terimlerin anlamı ne?" -> SOZLUK.md
 - "Açılış öncesi ne yapılmalı?" -> ACILIS_HAZIRLIK.md
+- "Canlı mesaja ne oldu, hangi model kullanıldı?" -> SCRIPTS.md (`npm run monitor:live`)
 
 ## Not
 

@@ -6,7 +6,9 @@
   "scripts": {
     "test": "node --test tests/**/*.test.cjs",
     "test:local": "node scripts/run-local-tests.cjs",
-    "check:readiness": "node scripts/check-readiness.cjs"
+    "test:scenarios": "node scripts/run-scenarios.cjs",
+    "check:readiness": "node scripts/check-readiness.cjs",
+    "monitor:live": "node scripts/live-monitor.cjs"
   },
   "engines": {
     "node": ">=22.13"

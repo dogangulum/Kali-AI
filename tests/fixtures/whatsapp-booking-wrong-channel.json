@@ -1,0 +1,38 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "123456789012345",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "+905551234567",
+              "phone_number_id": "987654321098765"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "Örnek Müşteri"
+                },
+                "wa_id": "905327654321"
+              }
+            ],
+            "messages": [
+              {
+                "from": "905327654321",
+                "id": "wamid.TEST_booking_wrong_channel",
+                "timestamp": "1790060400",
+                "type": "text",
+                "text": {
+                  "body": "Pizza siparişim nerede kaldı?"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
