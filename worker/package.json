@@ -1,0 +1,10 @@
+{
+  "name": "kali-ai-content-worker",
+  "private": true,
+  "type": "commonjs",
+  "engines": { "node": ">=22.13" },
+  "scripts": { "start": "node index.cjs" },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}

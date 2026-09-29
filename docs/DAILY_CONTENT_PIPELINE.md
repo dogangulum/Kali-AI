@@ -41,7 +41,8 @@ Otomatik onay yoktur, insan onayı her zaman akışta kalır.
 | `supabase/functions/_shared/telegram.ts` | Telegram API yardımcıları, buton yapısı, secret kontrolü |
 | `supabase/functions/telegram-approval-webhook/` | Telegram'ın çağırdığı uç nokta |
 | `supabase/functions/content-scheduler/` | pg_cron'un 5 dakikada bir çağırdığı uç nokta |
-| `tests/content-pipeline.test.cjs` | 21 test |
+| `tests/content-pipeline.test.cjs`, `tests/worker-daily-run.test.cjs` | 29 test |
+| `worker/` | Oracle'da çalışan günlük üretim/yayın worker'ı |
 
 ## İşletme ayarı (`business_config.config.content_pipeline`)
 
@@ -89,7 +90,20 @@ $$);
 
 (`content_scheduler_secret` Supabase Vault'a aynı değerle eklenir.)
 
-## Sonraki aşama (henüz yok)
+## Oracle worker (`worker/`)
 
-- Oracle worker: rakip analizi, görsel üretimi, CapCut headless otomasyonu (hesap geçişi + 3 deneme + ekran görüntüsü), ElevenLabs, birleştirme, taslağı Telegram'a gönderme.
-- Instagram yayınlama (Graph API content publishing) ve performans verisinin `content_performance` tablosuna çekilmesi.
+`systemd/kali-ai-content.timer` her gün 07:30'da, ayrıca 08:05–22:05 arasında saat başı `worker/index.cjs`'i çalıştırır. Her çalışmada şu sırayla ilerler:
+
+1. Onaylanıp vakti gelen içerikleri yayınlar. `queued` kuyruğundakiler her zaman önce gider.
+2. Açık "Değiştir" taleplerini işler. Sadece seçilen katman yeniden üretilir ve yeni taslak Telegram'a gider.
+3. Bugünün planı yoksa oluşturur: konu seçer, rakip senaryosunu bulur, 3 aday üretir, öğrenen puanlamayla birini seçer ve taslağı gönderir. Plan varsa bu adımı atlar, yani aynı gün iki kez çalışmak güvenlidir.
+
+Saatlik çalıştığı için yayın, planlanan saatten en fazla ~1 saat sonra gerçekleşir (19:00 slotu → 19:05).
+
+- `worker/lib/retry-runner.cjs`: Her adım 3 kez denenir. Her hatada ekran görüntüsü alınır ve 2. denemeden itibaren seçiciler yenilenir. Sonunda Telegram uyarısı gider.
+- `worker/lib/credit-pool.cjs`: Sağlayıcı `OUT_OF_CREDIT` döndürürse sıradaki hesaba geçilir. Hiç hesap kalmazsa plan `failed` olur ve "yeni hesap eklenmeli" uyarısı gider.
+- `worker/providers/index.cjs`: Dış servis bağlantıları. **Henüz hepsi boş (NOT_IMPLEMENTED).** Bağlanmadan worker çalışırsa planı `failed` yapar ve Telegram'dan haber verir, yarım iş yapmaz.
+
+## Sonraki aşama (sağlayıcılar)
+
+Sırayla: `publish` (Instagram Graph API), `writeCaption`/`inventSubTopic`/`analyzeCompetitor` (Claude API), `generateVoiceover` (ElevenLabs API), `merge` (ffmpeg), `generateImage`, `generateVideo` (CapCut headless Chromium), `findCompetitorVideos`.
