@@ -58,3 +58,6 @@ serverless/
 npm-debug.log*
 .pnpm-debug.log*
 supabase/.temp/
+
+# CapCut login sessions exported by worker/scripts/capcut-login.cjs
+*.state.json

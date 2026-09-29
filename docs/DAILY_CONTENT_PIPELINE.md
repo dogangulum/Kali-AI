@@ -104,6 +104,43 @@ Saatlik çalıştığı için yayın, planlanan saatten en fazla ~1 saat sonra g
 - `worker/lib/credit-pool.cjs`: Sağlayıcı `OUT_OF_CREDIT` döndürürse sıradaki hesaba geçilir. Hiç hesap kalmazsa plan `failed` olur ve "yeni hesap eklenmeli" uyarısı gider.
 - `worker/providers/index.cjs`: Dış servis bağlantıları. **Henüz hepsi boş (NOT_IMPLEMENTED).** Bağlanmadan worker çalışırsa planı `failed` yapar ve Telegram'dan haber verir, yarım iş yapmaz.
 
-## Sonraki aşama (sağlayıcılar)
+## Sağlayıcılar (`worker/providers/`)
 
-Sırayla: `publish` (Instagram Graph API), `writeCaption`/`inventSubTopic`/`analyzeCompetitor` (Claude API), `generateVoiceover` (ElevenLabs API), `merge` (ffmpeg), `generateImage`, `generateVideo` (CapCut headless Chromium), `findCompetitorVideos`.
+| Adım | Nasıl | Durum |
+|---|---|---|
+| Rakip videoları | Instagram Graph API `business_discovery`: resmi yol, sadece açık işletme/içerik üreticisi hesapları. Hesaplar `competitor_instagram_usernames` ayarından okunur. | Yazıldı, testli |
+| Rakip analizi | Videodan 6 kare çıkarılır (ffmpeg), kareler ve açıklama Claude'a verilir. Uygunluk kararı ve senaryo iskeleti gelir. | Yazıldı, testli |
+| Metin / hashtag / seslendirme metni / yeni alt konu | Claude API | Yazıldı, testli |
+| Kaynak görsel | Şimdilik Storage'daki `reference/` klasöründen eşinin fotoğrafları sırayla seçilir. AI görsel üretici seçilince buraya takılacak. | Yazıldı, testli |
+| Video | CapCut web, headless Chromium. Her hesabın kendi oturumu var. Hata olunca Claude ekran görüntüsünden seçiciyi yeniler. | Yazıldı, sahte tarayıcıyla testli. **Gerçek CapCut'ta henüz denenmedi.** |
+| Seslendirme | ElevenLabs API. Kota hatasında sıradaki hesaba geçilir. | Yazıldı, testli |
+| Müzik | Storage `music/<ruh-hali>/` klasöründen seçilir, son kullanılanlar tekrar edilmez. Klasör boşsa sadece seslendirme kullanılır. | Yazıldı, testli |
+| Birleştirme | ffmpeg: video + ses + döngülü müzik. Çıktı H.264/AAC, Instagram'a uygun. | Gerçek ffmpeg ile testli |
+| Yayın | Graph API: Reel, aynı videodan Story, kaynak görselden Post. Her format yayınlandığı an kaydedilir, tekrar denemede çift paylaşım olmaz. | Yazıldı, testli |
+| Performans | Yayından 24 saat ile 7 gün sonrası arasında günde bir kez insights çekilir. Öğrenen seçim ve en iyi saat bu veriyle besleniyor. | Yazıldı |
+
+Worker durumunu (CapCut oturumları, düzeltilmiş seçiciler) repo dışında, `/var/lib/kali-ai/state` altında tutar. Bu yüzden deploy'daki `git clean` bu dosyaları silmez.
+
+### Ek ayarlar (`content_pipeline` içine)
+
+```json
+{
+  "brand_name": "Kali Beauty Center",
+  "city": "Mersin",
+  "competitor_instagram_usernames": ["<rakip1>", "<rakip2>"],
+  "elevenlabs_voice_id": "<ses id>",
+  "music_volume": 0.15,
+  "capcut_credits_per_video": 1,
+  "caption_rules": ["Fiyat yazma", "DM'e yönlendir"]
+}
+```
+
+## Senin yapman gerekenler (tek seferlik)
+
+1. Kodu GitHub'a al (yama dosyası veya repoya erişim ver).
+2. Supabase: migration + `content_pipeline` ayarı (yukarıdaki SQL'ler).
+3. Telegram: [@BotFather](https://t.me/BotFather) ile bot oluştur ve token'ı sunucuya koy. Eşin bota `/start` yazsın, ardından `node scripts/setup-telegram.cjs chats` komutu chat id'yi verir. Sonra `node scripts/setup-telegram.cjs webhook <fonksiyon-url>` ile webhook'u kur.
+4. Storage `content` kovası: `reference/` klasörüne eşinin 20-30 fotoğrafını, salon ve logo görsellerini yükle. `music/enerjik/`, `music/sakin/` gibi klasörlere telifsiz müzik koy.
+5. Sunucu: `.env.local`'a değerleri gir. Sonra `sudo bash scripts/setup-content-worker.sh` çalıştır.
+6. CapCut: her hesap için bilgisayarında `node worker/scripts/capcut-login.cjs cc1` çalıştır. Çıkan `.state.json` dosyasını sunucuda `/var/lib/kali-ai/state/capcut-profiles/` klasörüne koy. Hesapları `node worker/scripts/accounts.cjs add capcut cc1 CAPCUT_CC1 10 daily 1` ile havuza ekle. ElevenLabs için de aynısını `ELEVENLABS_KEY_1` ile yap.
+7. İlk deneme: `sudo systemctl start kali-ai-content`. CapCut adımı ilk çalışmada büyük ihtimalle seçici düzeltmesi isteyecek. Ekran görüntüleri Storage'da `screenshots/` altına düşer.

@@ -36,7 +36,7 @@ function fakeProviders(overrides = {}) {
     generateVoiceover: async ({ account }) => { calls.push(['voice', account.id]); return { url: 'voice' }; },
     pickMusic: async () => ({ name: 'm', mood: 'enerjik' }),
     merge: async ({ videoUrl }) => ({ url: `final-${videoUrl}` }),
-    publish: async () => ({ items: [{ format: 'reel', mediaId: 'ig-1' }] }),
+    publish: async ({ onPublished }) => { await onPublished({ format: 'reel', mediaId: 'ig-1' }); },
     ...overrides,
   };
 }

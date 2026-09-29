@@ -24,7 +24,7 @@ async function main() {
   };
   const summary = await runDaily({
     db, businessId: KALI_BUSINESS_ID, rules, nowMs: Date.now(),
-    providers: createProviders(process.env), send, notify,
+    providers: createProviders({ env: process.env, config: cfg && cfg.config, db, businessId: KALI_BUSINESS_ID }), send, notify,
   });
   console.log(JSON.stringify(summary));
 }

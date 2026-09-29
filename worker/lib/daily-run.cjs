@@ -12,6 +12,11 @@ const { withAccount } = require('./credit-pool.cjs');
 
 const MAX_COMPETITOR_TRIES = 5;
 
+// Credits a generation call needs; providers may price per call or per char.
+function credits(providers, provider, input) {
+  return typeof providers.estimateCredits === 'function' ? providers.estimateCredits(provider, input) : 1;
+}
+
 async function loadLearningHistory(db, businessId) {
   const { data: selected } = await db.from('content_candidates').select('plan_id, features')
     .eq('business_id', businessId).eq('selected', true);
@@ -64,7 +69,12 @@ async function chooseCompetitorScenario(ctx, plan, topic) {
   const found = await providers.findCompetitorVideos({ service: topic.service_name, subTopic: plan.sub_topic });
   const fresh = R.unseenCompetitorSources(found || [], seenUrls).slice(0, MAX_COMPETITOR_TRIES);
   for (const video of fresh) {
-    const verdict = await providers.analyzeCompetitor({ video, service: topic.service_name, subTopic: plan.sub_topic });
+    let verdict;
+    try {
+      verdict = await providers.analyzeCompetitor({ video, service: topic.service_name, subTopic: plan.sub_topic });
+    } catch {
+      continue; // unreadable video: try the next one, don't record a verdict
+    }
     const { data: rows } = await db.from('competitor_analyses').insert({
       business_id: businessId, source_url: video.source_url, source_account: video.account || null,
       service_key: plan.service_key, scenario: verdict.scenario || {},
@@ -88,12 +98,12 @@ async function produceCandidate(ctx, plan, topic, scenario, variant, revision = 
     ? await step('caption', () => providers.writeCaption({ ...brief, previous: base, layer }))
     : { caption: base.caption, hashtags: base.hashtags, features: {} };
   let videoUrl = base && base.video_url;
-  let image = null;
+  let image = base && base.image_url ? { url: base.image_url } : null;
   let videoFeatures = {};
   if (redo('video') || !videoUrl) {
-    image = await step('image', () => providers.generateImage(brief));
+    image = await step('image', () => providers.generateImage({ ...brief, previous: base && base.image_url }));
     const video = await withAccount({
-      db, businessId, provider: 'capcut', needed: providers.videoCredits || 1, nowMs, planId: plan.id,
+      db, businessId, provider: 'capcut', needed: credits(providers, 'capcut', brief), nowMs, planId: plan.id, onAccountProblem: notify,
       fn: (account) => step('capcut_video', ({ refreshSelectors }) =>
         providers.generateVideo({ ...brief, image, account, refreshSelectors }), account.id),
     });
@@ -103,9 +113,10 @@ async function produceCandidate(ctx, plan, topic, scenario, variant, revision = 
   let voiceoverUrl = base && base.voiceover_url;
   let voiceFeatures = {};
   if (redo('voiceover') || !voiceoverUrl) {
+    const script = text.voiceover_script || text.caption;
     const voice = await withAccount({
-      db, businessId, provider: 'elevenlabs', needed: providers.voiceCredits || 1, nowMs, planId: plan.id,
-      fn: (account) => step('voiceover', () => providers.generateVoiceover({ ...brief, script: text.voiceover_script || text.caption, account }), account.id),
+      db, businessId, provider: 'elevenlabs', needed: credits(providers, 'elevenlabs', { script }), nowMs, planId: plan.id, onAccountProblem: notify,
+      fn: (account) => step('voiceover', () => providers.generateVoiceover({ ...brief, script, account }), account.id),
     });
     voiceoverUrl = voice.url;
     voiceFeatures = voice.features || {};
@@ -116,7 +127,7 @@ async function produceCandidate(ctx, plan, topic, scenario, variant, revision = 
   const features = { ...(base && base.features), ...videoFeatures, ...voiceFeatures, ...(text.features || {}), music_mood: music && music.mood, scenario: scenario ? 'competitor' : 'topic_only' };
   const { data: rows } = await db.from('content_candidates').insert({
     business_id: businessId, plan_id: plan.id, variant, revision,
-    video_url: merged.url, voiceover_url: voiceoverUrl, caption: text.caption,
+    image_url: image && image.url, video_url: merged.url, voiceover_url: voiceoverUrl, caption: text.caption,
     hashtags: text.hashtags || [], music: music && music.name, features,
   }).select('*');
   return rows[0];
@@ -142,6 +153,10 @@ async function sendDraft(ctx, plan, candidate, headline) {
 
 async function publishQueued(ctx) {
   const { db, businessId, providers, notify, nowMs } = ctx;
+  // A crashed previous run can leave a plan in 'publishing'; runs never
+  // overlap (systemd oneshot), so it is safe to hand it back. Formats that
+  // did go out are in content_performance and will be skipped.
+  await db.from('content_plans').update({ status: 'approved' }).eq('business_id', businessId).eq('status', 'publishing');
   const { data } = await db.from('content_plans').select('*').eq('business_id', businessId).in('status', ['queued', 'approved']);
   const due = R.publishOrder(data || [], nowMs);
   const published = [];
@@ -150,21 +165,52 @@ async function publishQueued(ctx) {
     if (!moved || !moved.length) continue;
     try {
       const { data: cand } = await db.from('content_candidates').select('*').eq('id', plan.selected_candidate_id).maybeSingle();
-      const result = await providers.publish({ plan, candidate: cand });
-      for (const item of (result && result.items) || []) {
-        await db.from('content_performance').insert({
+      const { data: done } = await db.from('content_performance').select('format').eq('plan_id', plan.id);
+      await providers.publish({
+        plan, candidate: cand, alreadyPublished: (done || []).map((d) => d.format),
+        onPublished: (item) => db.from('content_performance').insert({
           business_id: businessId, plan_id: plan.id, format: item.format,
           platform_media_id: item.mediaId, published_at: new Date(nowMs).toISOString(),
-        });
-      }
+        }),
+      });
       await db.from('content_plans').update({ status: 'published', published_at: new Date(nowMs).toISOString() }).eq('id', plan.id);
       published.push(plan.id);
     } catch (err) {
-      await db.from('content_plans').update({ status: plan.status }).eq('id', plan.id); // back to the queue
-      await notify(`⚠️ ${plan.plan_date} içeriği yayınlanamadı: ${String(err && err.message || err).slice(0, 300)}`);
+      const msg = String(err && err.message || err).slice(0, 300);
+      await db.from('automation_attempts').insert({
+        business_id: businessId, plan_id: plan.id, step: 'publish', attempt: 0, status: 'failed', error: msg,
+        finished_at: new Date(nowMs).toISOString(),
+      });
+      const { data: fails } = await db.from('automation_attempts').select('id').eq('plan_id', plan.id).eq('step', 'publish').eq('status', 'failed');
+      const giveUp = (fails || []).length >= ctx.rules.max_attempts;
+      await db.from('content_plans').update({ status: giveUp ? 'failed' : plan.status, notes: giveUp ? `publish failed: ${msg}` : null }).eq('id', plan.id);
+      await notify(giveUp
+        ? `⚠️ ${plan.plan_date} içeriği ${ctx.rules.max_attempts} denemede yayınlanamadı, bırakıldı: ${msg}`
+        : `⚠️ ${plan.plan_date} içeriği yayınlanamadı, bir sonraki çalışmada tekrar denenecek: ${msg}`);
     }
   }
   return published;
+}
+
+// Pulls Instagram insights for posts 24h-7d old, at most once a day each;
+// this is what the learner and the best-time estimate feed on.
+async function collectPerformance(ctx) {
+  const { db, businessId, providers, nowMs } = ctx;
+  if (!providers.insights) return 0;
+  const { data } = await db.from('content_performance').select('*').eq('business_id', businessId)
+    .gte('published_at', new Date(nowMs - 7 * 86_400_000).toISOString())
+    .lt('published_at', new Date(nowMs - 86_400_000).toISOString());
+  let n = 0;
+  for (const row of data || []) {
+    if (!row.platform_media_id) continue;
+    if (row.reach != null && Date.parse(row.measured_at) > nowMs - 20 * 3600_000) continue;
+    try {
+      const m = await providers.insights(row.platform_media_id, row.format);
+      await db.from('content_performance').update({ ...m, measured_at: new Date(nowMs).toISOString() }).eq('id', row.id);
+      n++;
+    } catch { /* stories expire after 24h; a missing metric is not an error */ }
+  }
+  return n;
 }
 
 async function processChangeRequests(ctx) {
@@ -196,6 +242,7 @@ async function runDaily(ctx) {
   const summary = { published: [], changes: [], plan: null, skipped: null };
   summary.published = await publishQueued(ctx);
   summary.changes = await processChangeRequests(ctx);
+  summary.measured = await collectPerformance(ctx);
 
   const today = R.localDate(nowMs, rules.timezone);
   const { data: existing } = await db.from('content_plans').select('id').eq('business_id', businessId).eq('plan_date', today).maybeSingle();
@@ -214,7 +261,9 @@ async function runDaily(ctx) {
   summary.plan = plan.id;
 
   try {
-    const competitor = await chooseCompetitorScenario(ctx, plan, topic);
+    // Competitor inspiration is optional: if discovery/analysis is down,
+    // produce from the topic alone rather than losing the day.
+    const competitor = await chooseCompetitorScenario(ctx, plan, topic).catch(() => null);
     if (competitor) await db.from('content_plans').update({ competitor_analysis_id: competitor.id }).eq('id', plan.id);
 
     const candidates = [];
@@ -249,4 +298,4 @@ async function runDaily(ctx) {
   return summary;
 }
 
-module.exports = { runDaily, publishQueued, processChangeRequests, loadLearningHistory };
+module.exports = { runDaily, publishQueued, processChangeRequests, collectPerformance, loadLearningHistory };

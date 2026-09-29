@@ -3,7 +3,7 @@
 // zeroed and the next one is tried. No accounts left -> OUT_OF_CREDIT_ALL.
 const { pickAccount } = require('./rules.cjs');
 
-async function withAccount({ db, businessId, provider, needed, nowMs, planId, fn }) {
+async function withAccount({ db, businessId, provider, needed, nowMs, planId, fn, onAccountProblem }) {
   const tried = new Set();
   for (;;) {
     const { data: accounts } = await db.from('generation_accounts').select('*')
@@ -33,6 +33,11 @@ async function withAccount({ db, businessId, provider, needed, nowMs, planId, fn
     } catch (err) {
       if (err && err.code === 'OUT_OF_CREDIT') {
         await db.from('generation_accounts').update({ credits_remaining: 0, last_error: 'out of credit' }).eq('id', account.id);
+        continue;
+      }
+      if (err && err.code === 'LOGIN_REQUIRED') {
+        await db.from('generation_accounts').update({ last_error: 'login required' }).eq('id', account.id);
+        if (onAccountProblem) await onAccountProblem(`⚠️ ${provider} hesabı "${account.label}" oturumu kapanmış; sıradaki hesaba geçildi. Tekrar giriş yapılması gerekiyor.`);
         continue;
       }
       throw err;

@@ -18,4 +18,6 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/log/kali-ai /opt/kali-ai
+# Playwright's Chromium lives under /root/.cache unless PLAYWRIGHT_BROWSERS_PATH is set
+Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/kali-ai/ms-playwright
+ReadWritePaths=/var/log/kali-ai /opt/kali-ai /var/lib/kali-ai

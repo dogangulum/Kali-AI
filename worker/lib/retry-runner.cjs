@@ -25,7 +25,7 @@ async function runStepWithRetries({ db, businessId, planId, step, rules, run, sc
         status: 'failed', error: String(err && err.message || err).slice(0, 2000),
         screenshot_url: screenshotUrl, finished_at: new Date().toISOString(),
       }).eq('id', attemptId);
-      if (err && err.code === 'OUT_OF_CREDIT') throw err; // credit pool handles this, not retries
+      if (err && (err.code === 'OUT_OF_CREDIT' || err.code === 'LOGIN_REQUIRED')) throw err; // credit pool switches account
       const decision = retryDecision(attempt, rules);
       if (!decision.retry) {
         if (notify) await notify(`⚠️ "${step}" adımı ${attempt} denemede başarısız oldu: ${String(err && err.message || err).slice(0, 300)}`);

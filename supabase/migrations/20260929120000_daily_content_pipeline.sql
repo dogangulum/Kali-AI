@@ -78,6 +78,7 @@ create table content_candidates (
   plan_id uuid not null references content_plans(id) on delete cascade,
   variant int not null,
   revision int not null default 1,
+  image_url text,
   video_url text,
   voiceover_url text,
   caption text,
