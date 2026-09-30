@@ -183,7 +183,7 @@ function capcut(browser, extra = {}) {
     : res(200, {}, Buffer.from('jpg')));
   const cc = createCapCut({
     env: {}, storage, fetchImpl, launch: browser.launch, model: 'm', anthropicApiKey: 'k',
-    flowPath: join(__dirname, '../config/capcut-flow.json'), overridesPath: join(dir, 'ov.json'), profilesDir: dir, ...extra,
+    flowPath: join(__dirname, 'helpers/capcut-flow.legacy.json'), overridesPath: join(dir, 'ov.json'), profilesDir: dir, ...extra,
   });
   return { cc, storage, dir };
 }
@@ -277,4 +277,32 @@ test('providers: Graph API first, scraper only when Graph returns nothing; failu
   const p3 = createProviders({ env, config, db: createDb({}), businessId: 'b', fetchImpl: denied, scraper: broken, notify: async (t) => notes.push(t) });
   assert.deepEqual(await p3.findCompetitorVideos({}), []);
   assert.match(notes[0], /Rakip videoları alınamadı/);
+});
+
+test('capcut (Dreamina flow): dismisses tour, uploads via file chooser, types prompt, saves the new video', async () => {
+  const log = [];
+  let evals = 0;
+  const page = {
+    goto: async (u) => log.push(['goto', u]),
+    waitForTimeout: async () => {},
+    keyboard: { press: async (k) => log.push(['key', k]), type: async (t) => log.push(['type', t]) },
+    locator: (sel) => ({ first: () => ({ isVisible: async () => sel.includes('Skip'), click: async () => log.push(['dismiss', sel]) }) }),
+    click: async (s, o) => log.push(['click', s, Boolean(o && o.force)]),
+    waitForEvent: async (ev) => { log.push(['wait', ev]); return { setFiles: async (f) => log.push(['chooser', f]) }; },
+    setInputFiles: async () => { throw new Error('should use the file chooser'); },
+    $$eval: async () => (++evals === 1 ? ['https://cdn/showcase.mp4'] : ['https://cdn/showcase.mp4', 'https://cdn/new.mp4']),
+    evaluate: async () => '',
+    request: { get: async (u) => { log.push(['get', u]); return { ok: () => true, status: () => 200, body: async () => Buffer.from('mp4') }; } },
+    screenshot: async () => Buffer.from('png'),
+  };
+  const browser = { launch: async () => ({ pages: () => [page], newPage: async () => page, close: async () => {} }) };
+  const { cc, storage } = capcut(browser, { flowPath: join(__dirname, '../config/capcut-flow.json') });
+  const out = await cc.generateVideo({ image: { url: 'https://img' }, account, subTopic: 'Hydrafacial', variant: 1 });
+  assert.match(out.url, /capcut\//);
+  assert.equal(Object.keys(storage.files).length, 1);
+  assert.ok(log.some(([a, s]) => a === 'dismiss' && /Skip/.test(s)));
+  assert.ok(log.some(([a, s, f]) => a === 'click' && /AI Video/.test(s) && f));
+  assert.ok(log.some(([a]) => a === 'chooser'));
+  assert.ok(log.some(([a, t]) => a === 'type' && /Hydrafacial/.test(t)));
+  assert.deepEqual(log.find(([a]) => a === 'get'), ['get', 'https://cdn/new.mp4']);
 });

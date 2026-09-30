@@ -1,14 +1,21 @@
 {
-  "_note": "UNVERIFIED first draft. Selectors were written without access to a logged-in CapCut account. On the first failures the worker asks Claude (screenshot + visible elements) for a corrected selector and saves it to CAPCUT_SELECTOR_OVERRIDES. Descriptions matter more than selectors: they are what the self-heal step reads.",
-  "start_url": "https://www.capcut.com/ai-tool/image-to-video",
-  "login_markers": ["text=/log in|sign in|giriş yap/i"],
+  "_note": "CapCut's AI video moved to Dreamina (dreamina.capcut.com). Layout taken from worker/scripts/capcut-inspect.cjs on 2026-09-30 (home composer: mode tabs AI Agent / AI Image / AI Video, a reference-upload tile inside the prompt box, a tiptap prompt editor and a primary send button at the bottom right). Selectors for the result are still unverified; on failure the worker asks Claude for a corrected selector (self-heal) and saves it to CAPCUT_SELECTOR_OVERRIDES. Descriptions matter more than selectors.",
+  "start_url": "https://dreamina.capcut.com/ai-tool/home",
+  "login_markers": ["text=/^(log in|sign in|giriş yap)$/i"],
   "out_of_credit_pattern": "(insufficient|not enough|out of|ran out of|yetersiz|bitti)[^.]{0,40}(credit|kredi)|upgrade to (pro|continue)",
   "steps": [
     { "name": "open_tool", "action": "goto", "value": "{{start_url}}" },
-    { "name": "upload_image", "action": "upload", "selector": "input[type=file]", "value": "{{image_path}}", "description": "The file input used to upload the source image for image-to-video." },
-    { "name": "fill_prompt", "action": "fill", "selector": "textarea", "value": "{{prompt}}", "description": "The prompt / description text area where the motion or scene description is typed." },
-    { "name": "generate", "action": "click", "selector": "button:has-text('Generate')", "description": "The main button that starts generating the video (Generate / Oluştur)." },
-    { "name": "wait_result", "action": "waitFor", "selector": "video", "timeoutMs": 600000, "description": "The generated video preview element that appears when generation is finished." },
-    { "name": "download", "action": "download", "selector": "button:has-text('Download')", "description": "The button that downloads the finished video file (Download / İndir)." }
+    { "name": "settle", "action": "wait", "ms": 6000 },
+    { "name": "close_popups", "action": "dismiss", "rounds": 3, "selectors": ["button:has-text(\"Skip\")", "[role=dialog] [aria-label*=\"lose\" i]", "[class*=\"modal\" i] [class*=\"close\" i]", "button[aria-label*=\"close\" i]"] },
+    { "name": "video_mode", "action": "click", "force": true, "selector": "button:has-text(\"AI Video\")", "description": "The 'AI Video' mode tab above the prompt box (tabs: AI Agent, AI Image, AI Video, AI Audio, AI Avatar)." },
+    { "name": "settle_mode", "action": "wait", "ms": 4000 },
+    { "name": "close_popups_again", "action": "dismiss", "rounds": 2, "selectors": ["button:has-text(\"Skip\")", "button:has-text(\"Got it\")", "[role=dialog] [aria-label*=\"lose\" i]"] },
+    { "name": "upload_image", "action": "upload", "trigger": "[class*=\"reference-upload\"]", "selector": "input[type=file]", "value": "{{image_path}}", "description": "The small upload tile at the left of the prompt box used to add a reference / first-frame image." },
+    { "name": "settle_upload", "action": "wait", "ms": 5000 },
+    { "name": "fill_prompt", "action": "type", "selector": ".tiptap.ProseMirror", "value": "{{prompt}}", "description": "The prompt editor ('Start with an idea, a script, or upload references')." },
+    { "name": "remember_videos", "action": "snapshotVideos" },
+    { "name": "generate", "action": "click", "force": true, "selector": "button.lv-btn-primary >> nth=-1", "description": "The round primary send/generate button at the bottom right of the prompt box." },
+    { "name": "wait_result", "action": "waitNewVideo", "timeoutMs": 900000, "pollMs": 15000, "description": "The newly generated video that appears after generation finishes." },
+    { "name": "download", "action": "saveNewVideo" }
   ]
 }

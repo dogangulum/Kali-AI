@@ -82,15 +82,75 @@ function createCapCut({ env, flowPath, overridesPath, profilesDir, storage, anth
     }
   }
 
+  const videoSrcs = (page) => page.$$eval('video', (vs) => vs.map((v) => v.currentSrc || v.src || '').filter(Boolean));
+
   async function runStep(page, step, vars, flow) {
     const selector = step.selector;
     const timeout = step.timeoutMs || 30_000;
     switch (step.action) {
       case 'goto': await page.goto(fill(step.value, vars), { waitUntil: 'domcontentloaded', timeout: 60_000 }); return null;
-      case 'upload': await page.setInputFiles(selector, fill(step.value, vars), { timeout }); return null;
+      case 'wait': await page.waitForTimeout(step.ms || 3000); return null;
+      // Close pop-ups / onboarding tours; never fails.
+      case 'dismiss': {
+        for (let round = 0; round < (step.rounds || 2); round++) {
+          await page.keyboard.press('Escape').catch(() => {});
+          for (const sel of step.selectors || []) {
+            const el = page.locator(sel).first();
+            if (await el.isVisible().catch(() => false)) {
+              await el.click({ timeout: 3000, force: true }).catch(() => {});
+              await page.waitForTimeout(600);
+            }
+          }
+        }
+        return null;
+      }
+      case 'upload': {
+        const file = fill(step.value, vars);
+        if (step.trigger) {
+          try {
+            const [chooser] = await Promise.all([
+              page.waitForEvent('filechooser', { timeout }),
+              page.click(step.trigger, { timeout, force: true }),
+            ]);
+            await chooser.setFiles(file);
+            return null;
+          } catch { /* fall back to a file input anywhere on the page */ }
+        }
+        await page.setInputFiles(selector, file, { timeout });
+        return null;
+      }
       case 'fill': await page.fill(selector, fill(step.value, vars), { timeout }); return null;
-      case 'click': await page.click(selector, { timeout }); await checkState(page, flow); return null;
+      // Rich text editors (ProseMirror/tiptap): focus, then type like a person.
+      case 'type': {
+        await page.click(selector, { timeout, force: true });
+        await page.keyboard.type(fill(step.value, vars), { delay: 15 });
+        return null;
+      }
+      case 'click': await page.click(selector, { timeout, force: Boolean(step.force) }); await checkState(page, flow); return null;
       case 'waitFor': await page.waitForSelector(selector, { timeout, state: 'visible' }); return null;
+      // Remember which videos are already on the page (showcase clips), so the
+      // generated one can be recognised later.
+      case 'snapshotVideos': vars.__videosBefore = await videoSrcs(page).catch(() => []); return null;
+      case 'waitNewVideo': {
+        const before = new Set(vars.__videosBefore || []);
+        const deadline = Date.now() + timeout;
+        while (Date.now() < deadline) {
+          await checkState(page, flow);
+          const fresh = (await videoSrcs(page).catch(() => [])).find((src) => !before.has(src) && /^https?:/.test(src));
+          if (fresh) { vars.__newVideo = fresh; return null; }
+          await page.waitForTimeout(step.pollMs || 10_000);
+        }
+        throw providerError('CAPCUT_STEP', `no new video after ${Math.round(timeout / 1000)}s`);
+      }
+      case 'saveNewVideo': {
+        if (!vars.__newVideo) throw providerError('CAPCUT_STEP', 'no generated video to save');
+        const res = await page.request.get(vars.__newVideo, { timeout: 120_000 });
+        if (!res.ok()) throw providerError('DOWNLOAD', `generated video ${res.status()}`);
+        const out = join(profilesDir, `.clip-${Date.now()}.mp4`);
+        writeFileSync(out, await res.body());
+        vars.__tmpFiles = [...(vars.__tmpFiles || []), out];
+        return out;
+      }
       case 'download': {
         const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 120_000 }), page.click(selector, { timeout })]);
         return dl.path();
@@ -105,6 +165,7 @@ function createCapCut({ env, flowPath, overridesPath, profilesDir, storage, anth
     const imagePath = join(profilesDir, `.src-${Date.now()}.jpg`);
     const slug = account.label.replace(/[^\w-]/g, '_');
     const context = await doLaunch(join(profilesDir, slug));
+    let vars = null;
     try {
       // Session exported from a manual login (worker/scripts/capcut-login.cjs).
       const statePath = join(profilesDir, `${slug}.state.json`);
@@ -118,7 +179,7 @@ function createCapCut({ env, flowPath, overridesPath, profilesDir, storage, anth
       if (!imgRes.ok) throw providerError('DOWNLOAD', `source image ${imgRes.status}`);
       writeFileSync(imagePath, Buffer.from(await imgRes.arrayBuffer()));
       const beats = scenario && Array.isArray(scenario.beats) ? scenario.beats.map((b) => `${b.shot || ''} ${b.camera || ''}`.trim()).join('; ') : '';
-      const vars = {
+      vars = {
         start_url: flow.start_url, image_path: imagePath,
         prompt: `${subTopic}. ${beats || 'slow cinematic camera movement in a beauty salon'}. Keep the person's face unchanged.`.slice(0, 800),
       };
@@ -128,6 +189,7 @@ function createCapCut({ env, flowPath, overridesPath, profilesDir, storage, anth
           const r = await runStep(page, step, vars, flow);
           if (r) file = r;
         } catch (err) {
+          if (step.optional && err.code !== 'OUT_OF_CREDIT' && err.code !== 'LOGIN_REQUIRED') continue;
           lastShot = await page.screenshot({ type: 'png' }).catch(() => null);
           if (err.code === 'OUT_OF_CREDIT' || err.code === 'LOGIN_REQUIRED') throw err;
           await checkState(page, flow);
@@ -143,6 +205,7 @@ function createCapCut({ env, flowPath, overridesPath, profilesDir, storage, anth
       return { url, features: { video_source: 'capcut' } };
     } finally {
       rmSync(imagePath, { force: true });
+      for (const f of (vars && vars.__tmpFiles) || []) rmSync(f, { force: true });
       await context.close().catch(() => {});
     }
   }
