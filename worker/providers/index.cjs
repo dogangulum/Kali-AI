@@ -5,6 +5,7 @@
 // of doing something half-way.
 //
 //   findCompetitorVideos({ service, subTopic })        -> [{ source_url, media_url, account, caption }]
+//     (Graph API business_discovery; falls back to the separate scraper account)
 //   analyzeCompetitor({ video, service, subTopic })     -> { fit, reason?, scenario }
 //   inventSubTopic({ service, avoid })                  -> string
 //   writeCaption({ service, subTopic, scenario, variant, previous?, layer? })
@@ -25,6 +26,7 @@ const { createElevenLabs } = require('./elevenlabs.cjs');
 const { createMedia } = require('./media.cjs');
 const { createLibrary } = require('./library.cjs');
 const { createCapCut } = require('./capcut.cjs');
+const { createCompetitorScraper } = require('./competitor-scraper.cjs');
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
 
@@ -32,7 +34,7 @@ function missing(name, what) {
   return async () => { throw providerError('CONFIG', `${name}: ${what} is not configured`); };
 }
 
-function createProviders({ env, config, db, businessId, fetchImpl = fetch }) {
+function createProviders({ env, config, db, businessId, fetchImpl = fetch, notify = null, scraper = null }) {
   const cp = (config && config.content_pipeline) || {};
   const storage = createStorage({
     supabaseUrl: env.SUPABASE_URL, serviceKey: env.SUPABASE_SERVICE_ROLE_KEY,
@@ -54,10 +56,27 @@ function createProviders({ env, config, db, businessId, fetchImpl = fetch }) {
     profilesDir: env.CAPCUT_PROFILES_DIR || '/var/lib/kali-ai/state/capcut-profiles',
   });
 
+  const competitorScraper = scraper || createCompetitorScraper({ env });
+  const competitors = cp.competitor_instagram_usernames || [];
+
+  // Official Graph API first; if it returns nothing (e.g. the Meta app has no
+  // business_discovery access yet), fall back to the separate scraper account.
+  async function findCompetitorVideos() {
+    let found = [];
+    if (ig) found = await ig.findCompetitorVideos({ usernames: competitors }).catch(() => []);
+    if (found.length || !competitorScraper.configured) return found;
+    try {
+      return await competitorScraper.findCompetitorVideos({ usernames: competitors });
+    } catch (err) {
+      if (notify) await notify(`⚠️ Rakip videoları alınamadı (${err.message}). Bugünkü video sadece konudan üretilecek.`).catch(() => {});
+      return [];
+    }
+  }
+
   return {
-    findCompetitorVideos: ig
-      ? () => ig.findCompetitorVideos({ usernames: cp.competitor_instagram_usernames || [] })
-      : missing('findCompetitorVideos', 'IG_USER_ID / IG_PAGE_ACCESS_TOKEN'),
+    findCompetitorVideos: ig || competitorScraper.configured
+      ? findCompetitorVideos
+      : missing('findCompetitorVideos', 'IG_USER_ID / IG_PAGE_ACCESS_TOKEN or IG_SCRAPER_USERNAME'),
     analyzeCompetitor: claude
       ? async ({ video, service, subTopic }) => claude.analyzeCompetitor({
         video, service, subTopic, frames: video.media_url ? await media.sampleFrames(video.media_url, 6) : [],

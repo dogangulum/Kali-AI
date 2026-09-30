@@ -218,3 +218,63 @@ test('capcut: credit message -> OUT_OF_CREDIT; login screen -> LOGIN_REQUIRED', 
   const loggedOut = capcut(fakeBrowser({ visibleLogin: true })).cc;
   await assert.rejects(loggedOut.generateVideo({ image: { url: 'u' }, account, subTopic: 's' }), (e) => e.code === 'LOGIN_REQUIRED');
 });
+
+// --- competitor scraper fallback (separate Instagram account) ---
+const { createCompetitorScraper } = require('../worker/providers/competitor-scraper.cjs');
+const { createProviders } = require('../worker/providers/index.cjs');
+
+function fakeExec(stdout, seen = {}) {
+  return (cmd, args, opts, cb) => {
+    seen.cmd = cmd; seen.env = opts.env;
+    const stdin = { end: (input) => { seen.input = input; setImmediate(() => cb(null, stdout)); } };
+    return { stdin };
+  };
+}
+
+test('scraper: parses videos, passes only its own credentials, never runs unconfigured', async () => {
+  const seen = {};
+  const videos = [{ source_url: 'https://www.instagram.com/reel/A/', media_url: 'https://cdn/a.mp4', account: 'rakip', engagement: 50 },
+    { source_url: 'https://www.instagram.com/reel/B/' }];
+  const s = createCompetitorScraper({
+    env: { IG_SCRAPER_USERNAME: 'yan', IG_SCRAPER_PASSWORD: 'p', SUPABASE_SERVICE_ROLE_KEY: 'gizli' },
+    execFileImpl: fakeExec(`warning line\n${JSON.stringify(videos)}\n`, seen),
+  });
+  const out = await s.findCompetitorVideos({ usernames: ['rakip'] });
+  assert.deepEqual(out.map((v) => v.source_url), ['https://www.instagram.com/reel/A/']);
+  assert.deepEqual(JSON.parse(seen.input), ['rakip']);
+  assert.equal(seen.env.SUPABASE_SERVICE_ROLE_KEY, undefined);
+  assert.equal(seen.env.IG_SCRAPER_USERNAME, 'yan');
+  const off = createCompetitorScraper({ env: {}, execFileImpl: () => { throw new Error('must not run'); } });
+  assert.equal(off.configured, false);
+  await assert.rejects(off.findCompetitorVideos({ usernames: ['x'] }), /IG_SCRAPER_USERNAME/);
+});
+
+test('scraper: login challenge becomes LOGIN_REQUIRED', async () => {
+  const s = createCompetitorScraper({
+    env: { IG_SCRAPER_USERNAME: 'yan', IG_SCRAPER_PASSWORD: 'p' },
+    execFileImpl: fakeExec('{"error":"login/challenge: ChallengeRequired","code":"LOGIN"}'),
+  });
+  await assert.rejects(s.findCompetitorVideos({ usernames: ['rakip'] }), (e) => e.code === 'LOGIN_REQUIRED');
+});
+
+test('providers: Graph API first, scraper only when Graph returns nothing; failure notifies and continues', async () => {
+  const config = { content_pipeline: { competitor_instagram_usernames: ['rakip'] } };
+  const env = { IG_USER_ID: '1', IG_PAGE_ACCESS_TOKEN: 't', SUPABASE_URL: 'https://x', SUPABASE_SERVICE_ROLE_KEY: 'k' };
+  const denied = async () => res(400, { error: { message: '(#10) Application does not have permission' } });
+  const calls = [];
+  const scraper = { configured: true, findCompetitorVideos: async ({ usernames }) => { calls.push(usernames); return [{ source_url: 's', media_url: 'm' }]; } };
+  const p = createProviders({ env, config, db: createDb({}), businessId: 'b', fetchImpl: denied, scraper });
+  assert.deepEqual((await p.findCompetitorVideos({})).map((v) => v.source_url), ['s']);
+  assert.deepEqual(calls, [['rakip']]);
+
+  const graphOk = async () => res(200, { business_discovery: { media: { data: [{ media_type: 'VIDEO', media_url: 'g', permalink: 'graph', like_count: 1 }] } } });
+  const p2 = createProviders({ env, config, db: createDb({}), businessId: 'b', fetchImpl: graphOk, scraper });
+  assert.deepEqual((await p2.findCompetitorVideos({})).map((v) => v.source_url), ['graph']);
+  assert.equal(calls.length, 1);
+
+  const notes = [];
+  const broken = { configured: true, findCompetitorVideos: async () => { throw new Error('rakip hesabi: login'); } };
+  const p3 = createProviders({ env, config, db: createDb({}), businessId: 'b', fetchImpl: denied, scraper: broken, notify: async (t) => notes.push(t) });
+  assert.deepEqual(await p3.findCompetitorVideos({}), []);
+  assert.match(notes[0], /Rakip videoları alınamadı/);
+});

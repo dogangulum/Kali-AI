@@ -135,6 +135,16 @@ Worker durumunu (CapCut oturumları, düzeltilmiş seçiciler) repo dışında, 
 }
 ```
 
+## Rakip videoları: ayrı hesapla tarama (yedek yol)
+
+Resmi yol Graph API `business_discovery`'dir. Meta uygulamasının bu erişimi yoksa (hata `#10`), worker rakip videolarını **ayrı bir Instagram hesabıyla** `instagrapi` üzerinden alır (`worker/scripts/ig_scraper.py`).
+
+- Bu yol Instagram kullanım şartlarına aykırıdır; hesap kilitlenebilir. Bu yüzden **salonun hesabı asla kullanılmaz**; sadece bu iş için açılmış bir hesap (`IG_SCRAPER_USERNAME` / `IG_SCRAPER_PASSWORD`).
+- Günde bir kez, rakip başına 8–20 sn bekleyerek son 30 paylaşıma bakar. Oturum `/var/lib/kali-ai/state/ig-scraper-session.json` içinde tutulur (her seferinde yeniden giriş yapılmaz).
+- Videolar sadece kare analizi için okunur, indirilip saklanmaz ve paylaşılmaz.
+- Giriş/doğrulama sorunu olursa Telegram'a "Rakip videoları alınamadı" mesajı gelir ve o gün video konudan üretilir.
+- Graph API izni açıldığında worker kendiliğinden resmi yolu kullanır; yedek yol devreye girmez.
+
 ## Senin yapman gerekenler (tek seferlik)
 
 1. Kodu GitHub'a al (yama dosyası veya repoya erişim ver).

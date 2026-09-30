@@ -10,8 +10,9 @@ export PLAYWRIGHT_BROWSERS_PATH="$STATE_DIR/ms-playwright"
 [[ $EUID -eq 0 ]] || { echo "root ile çalıştırın: sudo bash $0"; exit 1; }
 cd "$PROJECT_DIR"
 
-echo "[1/5] ffmpeg"
-apt-get install -y ffmpeg
+echo "[1/5] ffmpeg + python (rakip taramasi icin instagrapi)"
+apt-get install -y ffmpeg python3-pip
+pip3 install --quiet --upgrade instagrapi
 
 echo "[2/5] worker bağımlılıkları"
 (cd worker && npm install --omit=dev)
