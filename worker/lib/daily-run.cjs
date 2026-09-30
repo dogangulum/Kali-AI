@@ -221,9 +221,15 @@ async function processChangeRequests(ctx) {
     const { data: plan } = await db.from('content_plans').select('*').eq('id', req.plan_id).maybeSingle();
     if (!plan || plan.status !== 'regenerating') continue;
     const { data: base } = await db.from('content_candidates').select('*').eq('id', plan.selected_candidate_id).maybeSingle();
-    const topic = { service_name: plan.service_key };
+    const service = ctx.rules.services.find((sv) => sv.key === plan.service_key);
+    const topic = { service_name: service ? service.name : plan.service_key };
+    let scenario = null;
+    if (plan.competitor_analysis_id) {
+      const { data: ca } = await db.from('competitor_analyses').select('scenario').eq('id', plan.competitor_analysis_id).maybeSingle();
+      scenario = ca ? ca.scenario : null;
+    }
     try {
-      const cand = await produceCandidate(ctx, plan, topic, null, base.variant, (base.revision || 1) + 1, base, req.layer);
+      const cand = await produceCandidate(ctx, plan, topic, scenario, base.variant, (base.revision || 1) + 1, base, req.layer);
       await db.from('content_candidates').update({ selected: false }).eq('id', base.id);
       await db.from('content_candidates').update({ selected: true }).eq('id', cand.id);
       await db.from('content_plans').update({ selected_candidate_id: cand.id }).eq('id', plan.id);
