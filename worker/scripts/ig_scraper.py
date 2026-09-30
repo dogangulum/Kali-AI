@@ -29,6 +29,28 @@ def fail(code, message, exit_code):
     sys.exit(exit_code)
 
 
+def resolve_user_id(cl, name):
+    """username -> pk. Instagram retires endpoints often, so try several."""
+    for attempt in (lambda: cl.user_id_from_username(name),
+                    lambda: cl.user_info_by_username_v1(name).pk,
+                    lambda: next((u.pk for u in cl.search_users(name) if u.username.lower() == name.lower()), None)):
+        try:
+            pk = attempt()
+            if pk:
+                return pk
+        except Exception as e:  # noqa: BLE001
+            print("kullanici arama denemesi basarisiz (%s): %s" % (name, str(e)[:100]), file=sys.stderr)
+    return None
+
+
+def fetch_medias(cl, uid, amount):
+    try:
+        return cl.user_medias_v1(uid, amount=amount)
+    except Exception as e:  # noqa: BLE001
+        print("user_medias_v1 basarisiz: %s" % str(e)[:100], file=sys.stderr)
+        return cl.user_medias(uid, amount=amount)
+
+
 def main():
     user = os.environ.get("IG_SCRAPER_USERNAME", "").strip()
     password = os.environ.get("IG_SCRAPER_PASSWORD", "")
@@ -78,15 +100,19 @@ def main():
         if i:
             time.sleep(random.uniform(8, 20))  # stay slow and human-like
         try:
-            uid = cl.user_id_from_username(name)
-            medias = cl.user_medias(uid, amount=per_account)
+            uid = resolve_user_id(cl, name)
+            if not uid:
+                print("rakip bulunamadi: %s" % name, file=sys.stderr)
+                continue
+            medias = fetch_medias(cl, uid, per_account)
         except UserNotFound:
             continue
         except (ChallengeRequired, LoginRequired) as e:
             fail("LOGIN", "session lost: %s" % type(e).__name__, 3)
         except PleaseWaitFewMinutes:
             fail("RATE_LIMIT", "instagram asked to wait", 3)
-        except Exception:  # noqa: BLE001 - one bad account must not stop the others
+        except Exception as e:  # noqa: BLE001 - one bad account must not stop the others
+            print("rakip atlandi %s: %s" % (name, str(e)[:120]), file=sys.stderr)
             continue
         for m in medias:
             if m.media_type != 2 or not m.video_url:
