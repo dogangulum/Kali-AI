@@ -11,6 +11,9 @@ Env:
   IG_SCRAPER_SESSION                          session file (default /var/lib/kali-ai/state/ig-scraper-session.json)
   IG_SCRAPER_MEDIA_PER_ACCOUNT                how many recent posts to look at (default 30)
 
+One-time interactive login (asks for the e-mail/SMS code on the terminal):
+  python3 ig_scraper.py --login
+
 Exit codes: 0 ok, 2 config, 3 login/challenge, 4 other failure. Errors are
 printed as {"error": "...", "code": "..."} on stdout, never the password.
 """
@@ -39,24 +42,36 @@ def main():
     except ImportError:
         fail("CONFIG", "instagrapi is not installed (pip3 install instagrapi)", 2)
 
-    usernames = [u.strip().lstrip("@") for u in json.load(sys.stdin) if str(u).strip()]
+    login_only = "--login" in sys.argv
+    usernames = [] if login_only else [u.strip().lstrip("@") for u in json.load(sys.stdin) if str(u).strip()]
     per_account = int(os.environ.get("IG_SCRAPER_MEDIA_PER_ACCOUNT", "30"))
     session = os.environ.get("IG_SCRAPER_SESSION", "/var/lib/kali-ai/state/ig-scraper-session.json")
 
     cl = Client()
     cl.delay_range = [2, 5]
+    if not login_only:
+        # Unattended run: never wait for a verification code on stdin.
+        def no_code(username, choice):
+            raise ChallengeRequired("verification code needed")
+        cl.challenge_code_handler = no_code
     try:
         if os.path.exists(session):
             cl.load_settings(session)
         cl.login(user, password)
         cl.dump_settings(session)
         os.chmod(session, 0o600)
-    except (ChallengeRequired, BadPassword, LoginRequired) as e:
-        fail("LOGIN", "login/challenge: %s" % type(e).__name__, 3)
+    except ChallengeRequired:
+        fail("LOGIN", "Instagram dogrulama kodu istiyor; tek seferlik giris komutunu calistir (--login)", 3)
+    except (BadPassword, LoginRequired) as e:
+        fail("LOGIN", "login: %s" % type(e).__name__, 3)
     except PleaseWaitFewMinutes:
         fail("RATE_LIMIT", "instagram asked to wait", 3)
     except Exception as e:  # noqa: BLE001
         fail("LOGIN", "login failed: %s" % type(e).__name__, 3)
+
+    if login_only:
+        print("GIRIS TAMAM: oturum kaydedildi (%s)" % session)
+        return
 
     out = []
     for i, name in enumerate(usernames):
