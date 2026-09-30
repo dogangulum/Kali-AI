@@ -139,7 +139,7 @@ test('media: real ffmpeg merge of video + voiceover + looped music, and frame sa
   assert.ok(Math.abs(out.duration - 4) < 0.3, `duration ${out.duration}`);
   const file = join(dir, 'out.mp4');
   writeFileSync(file, storage.files['final/t.mp4']);
-  const streams = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', file]).toString().trim().split('\n');
+  const streams = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', file]).toString().trim().split(/\r?\n/);
   assert.deepEqual(streams.sort(), ['aac', 'h264']);
   const frames = await media.sampleFrames(v, 3);
   assert.equal(frames.length, 3);
