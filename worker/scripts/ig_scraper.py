@@ -13,6 +13,8 @@ Env:
 
 One-time interactive login (asks for the e-mail/SMS code on the terminal):
   python3 ig_scraper.py --login
+Resolve competitor ids once from a home connection (JSON usernames on stdin):
+  python3 ig_scraper.py --resolve > competitor-ids.json
 
 Exit codes: 0 ok, 2 config, 3 login/challenge, 4 other failure. Errors are
 printed as {"error": "...", "code": "..."} on stdout, never the password.
@@ -29,8 +31,22 @@ def fail(code, message, exit_code):
     sys.exit(exit_code)
 
 
-def resolve_user_id(cl, name):
+def load_known_ids():
+    """username -> pk cache resolved once from a home connection
+    (worker/scripts/ig_scraper.py --resolve on the PC). Datacenter IPs are
+    rate limited on the username lookup endpoints, not on the media feed."""
+    path = os.environ.get("IG_SCRAPER_IDS", "/var/lib/kali-ai/state/competitor-ids.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return {k.lower(): str(v) for k, v in json.load(f).items()}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def resolve_user_id(cl, name, known=None):
     """username -> pk. Instagram retires endpoints often, so try several."""
+    if known and name.lower() in known:
+        return known[name.lower()]
     for attempt in (lambda: cl.user_id_from_username(name),
                     lambda: cl.user_info_by_username_v1(name).pk,
                     lambda: next((u.pk for u in cl.search_users(name) if u.username.lower() == name.lower()), None)):
@@ -65,6 +81,7 @@ def main():
         fail("CONFIG", "instagrapi is not installed (pip3 install instagrapi)", 2)
 
     login_only = "--login" in sys.argv
+    resolve_only = "--resolve" in sys.argv
     usernames = [] if login_only else [u.strip().lstrip("@") for u in json.load(sys.stdin) if str(u).strip()]
     per_account = int(os.environ.get("IG_SCRAPER_MEDIA_PER_ACCOUNT", "30"))
     session = os.environ.get("IG_SCRAPER_SESSION", "/var/lib/kali-ai/state/ig-scraper-session.json")
@@ -95,12 +112,25 @@ def main():
         print("GIRIS TAMAM: oturum kaydedildi (%s)" % session)
         return
 
+    known = load_known_ids()
+    if resolve_only:
+        ids = {}
+        for i, name in enumerate(usernames):
+            if i:
+                time.sleep(random.uniform(3, 6))
+            pk = resolve_user_id(cl, name)
+            print("%s -> %s" % (name, pk or "BULUNAMADI"), file=sys.stderr)
+            if pk:
+                ids[name] = str(pk)
+        print(json.dumps(ids))
+        return
+
     out = []
     for i, name in enumerate(usernames):
         if i:
             time.sleep(random.uniform(8, 20))  # stay slow and human-like
         try:
-            uid = resolve_user_id(cl, name)
+            uid = resolve_user_id(cl, name, known)
             if not uid:
                 print("rakip bulunamadi: %s" % name, file=sys.stderr)
                 continue
